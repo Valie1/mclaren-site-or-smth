@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>McLaren F1 GT — 1997</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --orange: #FF5500;
+    --gold: #C9933A;
+    --white: #F0EDE8;
+    --dark: #050507;
+    --mid: #0A0A0F;
+    --text-dim: rgba(240,237,232,0.45);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--dark);
+    color: var(--white);
+    font-family: 'Rajdhani', sans-serif;
+    overflow-x: hidden;
+    cursor: none;
+  }
+
+  /* CUSTOM CURSOR */
+  #cursor {
+    position: fixed; top: 0; left: 0;
+    width: 12px; height: 12px;
+    background: var(--orange);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%,-50%);
+    transition: transform 0.1s, width 0.3s, height 0.3s, background 0.3s;
+    mix-blend-mode: screen;
+  }
+  #cursor-ring {
+    position: fixed; top: 0; left: 0;
+    width: 40px; height: 40px;
+    border: 1px solid rgba(255,85,0,0.5);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9998;
+    transform: translate(-50%,-50%);
+    transition: transform 0.15s ease-out, width 0.3s, height 0.3s;
+  }
+
+  /* LOADING SCREEN */
+  #loader {
+    position: fixed; inset: 0;
+    background: var(--dark);
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 1s ease;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+  .loader-logo {
+    font-family: 'Bebas Neue', cursive;
+    font-size: clamp(48px, 8vw, 96px);
+    letter-spacing: 0.2em;
+    color: var(--white);
+    margin-bottom: 8px;
+  }
+  .loader-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.4em;
+    color: var(--text-dim);
+    margin-bottom: 48px;
+  }
+  .loader-bar-wrap {
+    width: 300px; height: 1px;
+    background: rgba(255,255,255,0.1);
+    position: relative; overflow: hidden;
+  }
+  .loader-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--gold), var(--orange));
+    transition: width 0.1s;
+    box-shadow: 0 0 12px var(--orange);
+  }
+  .loader-pct {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 12px;
+    letter-spacing: 0.3em;
+  }
+
+  /* CANVAS */
+  #canvas-container {
+    position: fixed; inset: 0;
+    z-index: 1;
+  }
+  #three-canvas {
+    width: 100%; height: 100%;
+    display: block;
+  }
+
+  /* CINEMATIC OVERLAYS */
+  .bars-top, .bars-bottom {
+    position: fixed; left: 0; right: 0;
+    height: 80px; background: var(--dark);
+    z-index: 10;
+    transition: height 1.5s cubic-bezier(0.7,0,0.3,1);
+  }
+  .bars-top { top: 0; }
+  .bars-bottom { bottom: 0; }
+  .bars-top.open, .bars-bottom.open { height: 0; }
+
+  /* VIGNETTE */
+  .vignette {
+    position: fixed; inset: 0; z-index: 5;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.75) 100%);
+    pointer-events: none;
+  }
+
+  /* HUD OVERLAY */
+  #hud {
+    position: fixed; inset: 0; z-index: 20;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 1.5s ease;
+  }
+  #hud.visible { opacity: 1; }
+
+  .hud-tl {
+    position: absolute; top: 36px; left: 48px;
+  }
+  .hud-brand {
+    font-family: 'Bebas Neue', cursive;
+    font-size: clamp(32px, 5vw, 64px);
+    letter-spacing: 0.15em;
+    line-height: 0.9;
+    text-shadow: 0 0 40px rgba(255,85,0,0.4);
+  }
+  .hud-brand span { color: var(--orange); }
+  .hud-model {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.5em;
+    color: var(--gold);
+    margin-top: 6px;
+  }
+
+  .hud-tr {
+    position: absolute; top: 36px; right: 48px;
+    text-align: right;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    line-height: 2;
+  }
+
+  .hud-br {
+    position: absolute; bottom: 36px; right: 48px;
+    text-align: right;
+  }
+
+  .spec-row {
+    display: flex; gap: 40px; justify-content: flex-end;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; letter-spacing: 0.2em;
+    color: var(--text-dim);
+  }
+  .spec-item { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .spec-val {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 28px;
+    letter-spacing: 0.1em;
+    color: var(--white);
+    line-height: 1;
+  }
+  .spec-val span { color: var(--orange); font-size: 16px; }
+
+  /* CORNER LINES */
+  .corner {
+    position: absolute;
+    width: 24px; height: 24px;
+  }
+  .corner-tl { top: 28px; left: 36px; border-top: 1px solid rgba(255,85,0,0.4); border-left: 1px solid rgba(255,85,0,0.4); }
+  .corner-tr { top: 28px; right: 36px; border-top: 1px solid rgba(255,85,0,0.4); border-right: 1px solid rgba(255,85,0,0.4); }
+  .corner-bl { bottom: 28px; left: 36px; border-bottom: 1px solid rgba(255,85,0,0.4); border-left: 1px solid rgba(255,85,0,0.4); }
+  .corner-br { bottom: 28px; right: 36px; border-bottom: 1px solid rgba(255,85,0,0.4); border-right: 1px solid rgba(255,85,0,0.4); }
+
+  /* SCANLINE EFFECT */
+  .scanlines {
+    position: fixed; inset: 0; z-index: 6;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(0,0,0,0.04) 2px,
+      rgba(0,0,0,0.04) 4px
+    );
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  /* SCROLL SECTIONS */
+  #scroll-wrapper {
+    position: relative; z-index: 30;
+    margin-top: 100vh;
+    pointer-events: all;
+  }
+
+  .section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding: 0 10vw;
+    position: relative;
+  }
+
+  .section-line {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--orange), transparent);
+    opacity: 0.3;
+  }
+
+  /* CONTENT CARDS */
+  .content-block {
+    max-width: 600px;
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 0.9s ease, transform 0.9s ease;
+  }
+  .content-block.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .section-eyebrow {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; letter-spacing: 0.5em;
+    color: var(--orange);
+    margin-bottom: 16px;
+    text-transform: uppercase;
+  }
+
+  .section-title {
+    font-family: 'Bebas Neue', cursive;
+    font-size: clamp(40px, 6vw, 88px);
+    letter-spacing: 0.05em;
+    line-height: 0.95;
+    margin-bottom: 24px;
+  }
+
+  .section-body {
+    font-size: 16px;
+    font-weight: 300;
+    line-height: 1.8;
+    color: rgba(240,237,232,0.7);
+    margin-bottom: 32px;
+  }
+
+  .divider {
+    width: 48px; height: 2px;
+    background: linear-gradient(90deg, var(--orange), transparent);
+    margin-bottom: 24px;
+  }
+
+  /* STAT GRID */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: rgba(255,85,0,0.1);
+    border: 1px solid rgba(255,85,0,0.15);
+    margin-top: 16px;
+  }
+  .stat-cell {
+    padding: 20px 24px;
+    background: var(--dark);
+  }
+  .stat-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px; letter-spacing: 0.4em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .stat-number {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 36px;
+    letter-spacing: 0.05em;
+    color: var(--white);
+  }
+  .stat-unit {
+    font-size: 14px;
+    color: var(--orange);
+    margin-left: 4px;
+  }
+
+  /* BUILD SECTION */
+  .build-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  .build-step {
+    padding: 32px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.02);
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .build-step::before {
+    content: '';
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 2px;
+    background: linear-gradient(90deg, var(--orange), transparent);
+  }
+  .build-step.visible { opacity: 1; transform: translateY(0); }
+  .build-step:nth-child(2) { transition-delay: 0.1s; }
+  .build-step:nth-child(3) { transition-delay: 0.2s; }
+  .build-step:nth-child(4) { transition-delay: 0.3s; }
+
+  .step-num {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; letter-spacing: 0.4em;
+    color: var(--orange); margin-bottom: 12px;
+  }
+  .step-title {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 28px; letter-spacing: 0.05em;
+    margin-bottom: 12px;
+  }
+  .step-body {
+    font-size: 14px; font-weight: 300;
+    line-height: 1.7;
+    color: rgba(240,237,232,0.6);
+  }
+  .tech-tag {
+    display: inline-block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px; letter-spacing: 0.2em;
+    border: 1px solid rgba(255,85,0,0.3);
+    color: var(--orange);
+    padding: 3px 8px;
+    margin-top: 12px;
+    margin-right: 4px;
+  }
+
+  /* SECTION DIVIDERS */
+  .full-divider {
+    width: 100%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,85,0,0.2), transparent);
+    margin: 0 auto;
+  }
+
+  /* FOOTER */
+  footer {
+    padding: 80px 10vw;
+    text-align: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; letter-spacing: 0.4em;
+    color: var(--text-dim);
+  }
+  footer .footer-logo {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 48px; letter-spacing: 0.2em;
+    color: rgba(240,237,232,0.08);
+    margin-bottom: 24px;
+  }
+
+  /* SCROLL CTA */
+  .scroll-cta {
+    position: fixed;
+    bottom: 40px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px; letter-spacing: 0.5em;
+    color: var(--text-dim);
+    opacity: 0;
+    transition: opacity 1s ease;
+    animation: bounce 2s ease-in-out infinite;
+  }
+  .scroll-cta.visible { opacity: 1; }
+  .scroll-cta .arrow {
+    width: 1px; height: 40px;
+    background: linear-gradient(to bottom, rgba(255,85,0,0.6), transparent);
+  }
+  @keyframes bounce {
+    0%,100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(8px); }
+  }
+
+  /* SPEED LINE EFFECT */
+  .speed-lines {
+    position: fixed; inset: 0; z-index: 4;
+    pointer-events: none; overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+
+  /* GLARE FLASH */
+  .glare {
+    position: fixed; inset: 0; z-index: 50;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s;
+  }
+</style>
+</head>
+<body>
+
+<!-- CURSOR -->
+<div id="cursor"></div>
+<div id="cursor-ring"></div>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="loader-logo">McLaren</div>
+  <div class="loader-sub">F1 GT · 1997 · CHAMPIONSHIP EDITION</div>
+  <div class="loader-bar-wrap"><div class="loader-bar" id="loader-bar"></div></div>
+  <div class="loader-pct" id="loader-pct">0%</div>
+</div>
+
+<!-- GLARE -->
+<div class="glare" id="glare"></div>
+
+<!-- CINEMATIC BARS -->
+<div class="bars-top" id="bar-top"></div>
+<div class="bars-bottom" id="bar-bottom"></div>
+
+<!-- SCANLINES + VIGNETTE -->
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<!-- THREE.JS CANVAS -->
+<div id="canvas-container">
+  <canvas id="three-canvas"></canvas>
+</div>
+
+<!-- SPEED LINES -->
+<canvas id="speed-canvas" class="speed-lines" style="position:fixed;inset:0;z-index:4;pointer-events:none;"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div>
+  <div class="corner corner-br"></div>
+
+  <div class="hud-tl">
+    <div class="hud-brand">Mc<span>Laren</span></div>
+    <div class="hud-model">F1 GT · 1997 · CHASSIS #025</div>
+  </div>
+
+  <div class="hud-tr">
+    <div>BMW S70/2 ENGINE</div>
+    <div>6.1L V12 NATURALLY ASPIRATED</div>
+    <div style="color:var(--orange);margin-top:4px" id="speed-counter">000 MPH</div>
+  </div>
+
+  <div class="hud-br">
+    <div class="spec-row">
+      <div class="spec-item">
+        <div class="spec-val">627<span>BHP</span></div>
+        <div class="stat-label">POWER</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-val">240<span>MPH</span></div>
+        <div class="stat-label">TOP SPEED</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-val">3.2<span>S</span></div>
+        <div class="stat-label">0–60 MPH</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCROLL CTA -->
+<div class="scroll-cta" id="scroll-cta">
+  <span>EXPLORE</span>
+  <div class="arrow"></div>
+</div>
+
+<!-- SCROLL CONTENT -->
+<div id="scroll-wrapper">
+
+  <!-- SECTION 1: LEGEND -->
+  <section class="section" style="background: linear-gradient(to right, var(--dark) 60%, transparent);">
+    <div class="section-line"></div>
+    <div class="content-block" data-reveal>
+      <div class="section-eyebrow">Chapter 01 — Le Mans Legend</div>
+      <div class="divider"></div>
+      <div class="section-title">Born to<br>Devour Roads</div>
+      <div class="section-body">
+        The McLaren F1 GT wasn't built for racetracks — it was built to win Le Mans. Three works-specification GT cars were prepared for the 1995 24 Hours of Le Mans, and the F1 GTR claimed victory outright on its debut. The road-going GT version carries that DNA to every public road it graces.
+      </div>
+      <div class="stat-grid">
+        <div class="stat-cell">
+          <div class="stat-label">Engine</div>
+          <div class="stat-number">V12<span class="stat-unit">BMW</span></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Displacement</div>
+          <div class="stat-number">6.1<span class="stat-unit">LITRE</span></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Power Output</div>
+          <div class="stat-number">627<span class="stat-unit">BHP</span></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Curb Weight</div>
+          <div class="stat-number">1138<span class="stat-unit">KG</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="full-divider"></div>
+
+  <!-- SECTION 2: ENGINEERING -->
+  <section class="section" style="justify-content: flex-end; background: linear-gradient(to left, var(--dark) 60%, transparent);">
+    <div class="content-block" data-reveal>
+      <div class="section-eyebrow">Chapter 02 — Gordon Murray's Vision</div>
+      <div class="divider"></div>
+      <div class="section-title">Carbon<br>& Gold</div>
+      <div class="section-body">
+        Designed by Gordon Murray, the F1 GT features a full carbon fibre monocoque chassis — the first road car to do so. The engine bay is lined with gold foil to reflect heat. Every gram was scrutinised, every surface had a purpose. Only five GT variants were ever produced, each one a masterwork of 1990s engineering philosophy.
+      </div>
+      <div class="stat-grid">
+        <div class="stat-cell">
+          <div class="stat-label">Units Produced</div>
+          <div class="stat-number">5<span class="stat-unit">ONLY</span></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Designer</div>
+          <div class="stat-number" style="font-size:22px">GORDON<br>MURRAY</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Chassis</div>
+          <div class="stat-number" style="font-size:18px">CARBON<br>FIBRE</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Gold Bay Lining</div>
+          <div class="stat-number" style="font-size:20px;color:var(--gold)">24K<span class="stat-unit">GOLD</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="full-divider"></div>
+
+  <!-- SECTION 3: HOW IT WAS MADE (SITE) -->
+  <section class="section" style="padding: 120px 10vw; display:block; min-height: auto;">
+    <div class="content-block" data-reveal style="max-width: 900px; margin: 0 auto 64px;">
+      <div class="section-eyebrow">Chapter 03 — How This Experience Was Built</div>
+      <div class="divider"></div>
+      <div class="section-title">Behind the<br>Scene</div>
+      <div class="section-body">
+        This cinematic tribute to the McLaren F1 GT is built entirely in the browser — no plugins, no pre-rendered video. Every frame is calculated in real time using WebGL and Three.js, with physically-based rendering, dynamic lighting, and shader-driven atmospherics.
+      </div>
+    </div>
+
+    <div class="build-grid" style="margin: 0 auto;" data-build-grid>
+      <div class="build-step">
+        <div class="step-num">01 — 3D RENDERING</div>
+        <div class="step-title">Three.js + WebGL</div>
+        <div class="step-body">The McLaren F1 GT and tunnel models are loaded as GLB files using Three.js's GLTFLoader. Physically Based Rendering (PBR) materials respond to the scene's dynamic lighting in real time, giving the bodywork that deep, automotive sheen.</div>
+        <span class="tech-tag">THREE.JS r128</span>
+        <span class="tech-tag">GLTF 2.0</span>
+        <span class="tech-tag">PBR</span>
+      </div>
+      <div class="build-step">
+        <div class="step-num">02 — LIGHTING RIG</div>
+        <div class="step-title">Cinematic Lighting</div>
+        <div class="step-body">A custom lighting rig combines directional key lights, orange-tinted fill lights, a deep blue rim light for separation, and animated point lights that travel through the tunnel — mimicking the practical lighting of a real automotive shoot.</div>
+        <span class="tech-tag">DIRECTIONAL LIGHTS</span>
+        <span class="tech-tag">POINT LIGHTS</span>
+        <span class="tech-tag">ENVIRONMENT MAP</span>
+      </div>
+      <div class="build-step">
+        <div class="step-num">03 — CAMERA SYSTEM</div>
+        <div class="step-title">Cinematic Camera</div>
+        <div class="step-body">The camera follows a bezier spline path through the tunnel, shifting between a rear-tracking shot, dramatic low-angle side views, and a front-chasing perspective. Smooth easing and FOV changes simulate real camera motion.</div>
+        <span class="tech-tag">BEZIER SPLINES</span>
+        <span class="tech-tag">FOV SHIFTS</span>
+        <span class="tech-tag">EASING CURVES</span>
+      </div>
+      <div class="build-step">
+        <div class="step-num">04 — VISUAL FX</div>
+        <div class="step-title">Post-Processing &amp; FX</div>
+        <div class="step-body">CSS scanlines, a radial vignette, speed-line canvas overlays, and a custom HUD are layered over the WebGL canvas. The cinematic letterbox bars open on load. A custom cursor, glare flash, and counter animation add to the immersion.</div>
+        <span class="tech-tag">CANVAS 2D</span>
+        <span class="tech-tag">CSS ANIMATION</span>
+        <span class="tech-tag">SHADER-LIKE FX</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="full-divider"></div>
+
+  <!-- SECTION 4: LEGACY -->
+  <section class="section" style="background: linear-gradient(to right, var(--dark) 60%, transparent);">
+    <div class="content-block" data-reveal>
+      <div class="section-eyebrow">Chapter 04 — The Legacy</div>
+      <div class="divider"></div>
+      <div class="section-title">The Last<br>True F1</div>
+      <div class="section-body">
+        When the McLaren F1 was unveiled in 1992, nothing could touch it. When the GT variant emerged in 1997, it had already proven itself at Le Mans. Today, it remains one of the most visceral, uncompromised driving machines ever conceived — a car that needed no driver aids, no turbos, no compromise. Just the road, the engine, and you.
+      </div>
+      <div style="margin-top: 32px; font-family: 'Bebas Neue', cursive; font-size: 14px; letter-spacing: 0.4em; color: var(--orange);">
+        — THE END OF AN ERA —
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-logo">McLaren</div>
+    <div>F1 GT · 1997 · CHASSIS #025</div>
+    <div style="margin-top:8px;color:rgba(240,237,232,0.2)">THREE.JS · WEBGL · CSS · CANVAS 2D</div>
+    <div style="margin-top:24px;color:rgba(240,237,232,0.12)">A CINEMATIC TRIBUTE — NOT AFFILIATED WITH McLAREN AUTOMOTIVE</div>
+  </footer>
+</div>
+
+<!-- THREE.JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── GLOBALS ───────────────────────────────────────────────────────────────
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.physicallyCorrectLights = true;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x050507, 0.018);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(0, 2, 10);
+
+// ─── LOADER MANAGER ────────────────────────────────────────────────────────
+const bar = document.getElementById('loader-bar');
+const pct = document.getElementById('loader-pct');
+const manager = new THREE.LoadingManager();
+let loadedPct = 0;
+manager.onProgress = (url, loaded, total) => {
+  loadedPct = Math.round((loaded / total) * 100);
+  bar.style.width = loadedPct + '%';
+  pct.textContent = loadedPct + '%';
+};
+manager.onLoad = () => {
+  bar.style.width = '100%';
+  pct.textContent = '100%';
+  setTimeout(startExperience, 600);
+};
+
+// ─── LIGHTS ────────────────────────────────────────────────────────────────
+// Ambient
+const ambient = new THREE.AmbientLight(0x1a1a2e, 0.8);
+scene.add(ambient);
+
+// Key light (warm orange-white from above-right)
+const keyLight = new THREE.DirectionalLight(0xffd580, 6);
+keyLight.position.set(8, 12, -5);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.near = 0.5;
+keyLight.shadow.camera.far = 80;
+scene.add(keyLight);
+
+// Fill light (cool blue from left)
+const fillLight = new THREE.DirectionalLight(0x3366ff, 2);
+fillLight.position.set(-10, 4, 0);
+scene.add(fillLight);
+
+// Rim light (orange from behind-above)
+const rimLight = new THREE.DirectionalLight(0xff5500, 4);
+rimLight.position.set(-2, 6, -15);
+scene.add(rimLight);
+
+// Tunnel strip lights (animated point lights)
+const tunnelLights = [];
+const lightColors = [0xff8800, 0xff5500, 0xffcc44, 0xff4400];
+for (let i = 0; i < 12; i++) {
+  const pl = new THREE.PointLight(lightColors[i % 4], 3, 20);
+  pl.position.set(
+    (Math.random() - 0.5) * 6,
+    2 + Math.random() * 2,
+    -i * 8 - 5
+  );
+  scene.add(pl);
+  tunnelLights.push({ light: pl, baseZ: pl.position.z, baseIntensity: pl.intensity });
+}
+
+// Ground bounce light
+const groundLight = new THREE.PointLight(0xff3300, 2, 15);
+groundLight.position.set(0, -1, 2);
+scene.add(groundLight);
+
+// ─── GLB LOADERS ───────────────────────────────────────────────────────────
+// Inline GLTFLoader (r128 compatible)
+class GLTFLoader {
+  constructor(manager) {
+    this.manager = manager || THREE.DefaultLoadingManager;
+  }
+  load(url, onLoad, onProgress, onError) {
+    const loader = new THREE.FileLoader(this.manager);
+    loader.setResponseType('arraybuffer');
+    loader.load(url, (buffer) => {
+      this.parse(buffer, url, onLoad, onError);
+    }, onProgress, onError);
+  }
+  parse(buffer, path, onLoad, onError) {
+    // Use three.js built-in if available
+    if (THREE.GLTFLoader) { new THREE.GLTFLoader().parse(buffer, path, onLoad, onError); return; }
+    onError && onError(new Error('GLTFLoader not available'));
+  }
+}
+
+let carModel = null;
+let tunnelModel = null;
+let modelsLoaded = { car: false, tunnel: false };
+
+function checkAllLoaded() {
+  if (modelsLoaded.car && modelsLoaded.tunnel) {
+    manager.onLoad && manager.onLoad();
+  }
+}
+
+// Load via GLTFLoader from CDN
+const script = document.createElement('script');
+script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/loaders/GLTFLoader.js';
+script.onerror = () => {
+  // Fallback: create placeholder geometry
+  createFallbackCar();
+  createFallbackTunnel();
+};
+document.head.appendChild(script);
+
+script.onload = () => {
+  const gltfLoader = new THREE.GLTFLoader(manager);
+
+  gltfLoader.load('/mnt/user-data/uploads/1997_mclaren_f1_gt.glb',
+    (gltf) => {
+      carModel = gltf.scene;
+      carModel.scale.set(1.8, 1.8, 1.8);
+      carModel.position.set(0, -0.5, 0);
+      carModel.rotation.y = Math.PI;
+      carModel.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          if (child.material) {
+            child.material.envMapIntensity = 1.5;
+          }
+        }
+      });
+      scene.add(carModel);
+      modelsLoaded.car = true;
+      checkAllLoaded();
+    },
+    null,
+    () => { createFallbackCar(); modelsLoaded.car = true; checkAllLoaded(); }
+  );
+
+  gltfLoader.load('/mnt/user-data/uploads/tunnel_road.glb',
+    (gltf) => {
+      tunnelModel = gltf.scene;
+      tunnelModel.scale.set(2.5, 2.5, 2.5);
+      tunnelModel.position.set(0, -0.5, -20);
+      tunnelModel.traverse(child => {
+        if (child.isMesh) {
+          child.receiveShadow = true;
+          child.castShadow = false;
+        }
+      });
+      scene.add(tunnelModel);
+      modelsLoaded.tunnel = true;
+      checkAllLoaded();
+    },
+    null,
+    () => { createFallbackTunnel(); modelsLoaded.tunnel = true; checkAllLoaded(); }
+  );
+};
+
+// ─── FALLBACK GEOMETRY ─────────────────────────────────────────────────────
+function createFallbackCar() {
+  const group = new THREE.Group();
+  // Body
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 4.2), bodyMat);
+  body.position.y = 0.5;
+  group.add(body);
+  // Roof
+  const roofGeo = new THREE.BoxGeometry(1.4, 0.45, 2.2);
+  const roof = new THREE.Mesh(roofGeo, bodyMat);
+  roof.position.set(0, 0.97, -0.3);
+  group.add(roof);
+  // Wheels
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.5, roughness: 0.6 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xd4aa50, metalness: 1, roughness: 0.1 });
+  [[-0.95, 0.25, 1.4],[0.95, 0.25, 1.4],[-0.95, 0.25, -1.4],[0.95, 0.25, -1.4]].forEach(([x,y,z]) => {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.28, 20), wheelMat);
+    wheel.rotation.z = Math.PI/2;
+    wheel.position.set(x, y, z);
+    wheel.castShadow = true;
+    group.add(wheel);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.3, 8), rimMat);
+    rim.rotation.z = Math.PI/2;
+    rim.position.set(x > 0 ? x+0.01 : x-0.01, y, z);
+    group.add(rim);
+  });
+  group.scale.set(1.8, 1.8, 1.8);
+  group.position.set(0, -0.5, 0);
+  group.rotation.y = Math.PI;
+  group.traverse(c => { if (c.isMesh) c.castShadow = true; });
+  scene.add(group);
+  carModel = group;
+}
+
+function createFallbackTunnel() {
+  const group = new THREE.Group();
+  const tunMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.3, roughness: 0.8, side: THREE.BackSide });
+  
+  // Long tunnel cylinder
+  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 120, 20, 1, true), tunMat);
+  tunnel.rotation.x = Math.PI / 2;
+  tunnel.position.set(0, 2, -60);
+  group.add(tunnel);
+
+  // Road
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, metalness: 0.1, roughness: 0.95 });
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(7, 120), roadMat);
+  road.rotation.x = -Math.PI / 2;
+  road.position.set(0, -2.8, -60);
+  road.receiveShadow = true;
+  group.add(road);
+
+  // Road markings
+  const markMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
+  for (let i = 0; i < 15; i++) {
+    const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 3), markMat);
+    mark.rotation.x = -Math.PI / 2;
+    mark.position.set(0, -2.79, -i * 8);
+    group.add(mark);
+  }
+  
+  group.position.set(0, 0, -5);
+  scene.add(group);
+  tunnelModel = group;
+}
+
+// ─── CAMERA PATH ───────────────────────────────────────────────────────────
+// Keyframes: [x, y, z, lookAtX, lookAtY, lookAtZ, fov]
+const camPath = [
+  // Intro: rear shot, behind car
+  { t: 0,    pos: [0, 1.5, 9],     look: [0, 0.8, -5],   fov: 55 },
+  // Pull back wider
+  { t: 0.08, pos: [0, 2.2, 14],    look: [0, 0.5, -10],  fov: 50 },
+  // Low side beauty shot
+  { t: 0.18, pos: [4, 0.4, -3],    look: [0, 0.8, -8],   fov: 60 },
+  // Dramatic low front 3/4
+  { t: 0.28, pos: [-3, 0.5, -12],  look: [0, 0.7, -20],  fov: 65 },
+  // High overhead
+  { t: 0.38, pos: [0, 8, -5],      look: [0, 0, -15],    fov: 45 },
+  // Low rear again, tunnel mouth
+  { t: 0.48, pos: [2, 0.8, 6],     look: [0, 1, -5],     fov: 55 },
+  // Inside tunnel, low
+  { t: 0.60, pos: [0, 1.2, -10],   look: [0, 1, -30],    fov: 70 },
+  // Tunnel fly-through wide
+  { t: 0.72, pos: [0, 2.5, -25],   look: [0, 1.5, -50],  fov: 75 },
+  // Exit rear shot, looping back
+  { t: 0.85, pos: [0, 1.8, -40],   look: [0, 1, -55],    fov: 60 },
+  // Back to start
+  { t: 1.0,  pos: [0, 1.5, 9],     look: [0, 0.8, -5],   fov: 55 },
+];
+
+function lerpCam(t) {
+  t = t % 1;
+  let a = camPath[0], b = camPath[1];
+  for (let i = 0; i < camPath.length - 1; i++) {
+    if (t >= camPath[i].t && t <= camPath[i+1].t) { a = camPath[i]; b = camPath[i+1]; break; }
+  }
+  const f = (a.t === b.t) ? 0 : (t - a.t) / (b.t - a.t);
+  const s = f * f * (3 - 2 * f); // smoothstep
+
+  const px = a.pos[0] + (b.pos[0]-a.pos[0])*s;
+  const py = a.pos[1] + (b.pos[1]-a.pos[1])*s;
+  const pz = a.pos[2] + (b.pos[2]-a.pos[2])*s;
+  const lx = a.look[0] + (b.look[0]-a.look[0])*s;
+  const ly = a.look[1] + (b.look[1]-a.look[1])*s;
+  const lz = a.look[2] + (b.look[2]-a.look[2])*s;
+  const fov = a.fov + (b.fov - a.fov) * s;
+  return { pos: [px,py,pz], look: [lx,ly,lz], fov };
+}
+
+// ─── SPEED LINES ───────────────────────────────────────────────────────────
+const speedCanvas = document.getElementById('speed-canvas');
+const sCtx = speedCanvas.getContext('2d');
+speedCanvas.width = window.innerWidth;
+speedCanvas.height = window.innerHeight;
+
+function drawSpeedLines(intensity) {
+  speedCanvas.style.opacity = intensity;
+  sCtx.clearRect(0, 0, speedCanvas.width, speedCanvas.height);
+  if (intensity < 0.01) return;
+  const cx = speedCanvas.width / 2;
+  const cy = speedCanvas.height / 2;
+  sCtx.strokeStyle = `rgba(255,100,20,${intensity * 0.25})`;
+  sCtx.lineWidth = 0.5;
+  for (let i = 0; i < 60; i++) {
+    const angle = (i / 60) * Math.PI * 2;
+    const r1 = 250 + Math.random() * 100;
+    const r2 = r1 + 80 + Math.random() * 120;
+    sCtx.beginPath();
+    sCtx.moveTo(cx + Math.cos(angle)*r1, cy + Math.sin(angle)*r1);
+    sCtx.lineTo(cx + Math.cos(angle)*r2, cy + Math.sin(angle)*r2);
+    sCtx.stroke();
+  }
+}
+
+// ─── HUD COUNTER ───────────────────────────────────────────────────────────
+const speedCounter = document.getElementById('speed-counter');
+let displaySpeed = 0;
+function updateSpeedCounter(target) {
+  displaySpeed += (target - displaySpeed) * 0.08;
+  const s = Math.floor(displaySpeed).toString().padStart(3, '0');
+  speedCounter.textContent = s + ' MPH';
+}
+
+// ─── GLARE FLASH ───────────────────────────────────────────────────────────
+const glare = document.getElementById('glare');
+const flashTimes = [0.18, 0.28, 0.38, 0.48];
+let lastFlash = -1;
+function triggerFlash(t) {
+  const idx = flashTimes.findIndex(ft => Math.abs(t % 1 - ft) < 0.008);
+  if (idx !== -1 && idx !== lastFlash) {
+    lastFlash = idx;
+    glare.style.opacity = '0.12';
+    setTimeout(() => glare.style.opacity = '0', 120);
+  }
+}
+
+// ─── ANIMATION STATE ───────────────────────────────────────────────────────
+let t = 0;
+let speed = 0.0014;
+let started = false;
+let clock = new THREE.Clock();
+
+function startExperience() {
+  document.getElementById('loader').classList.add('hidden');
+  setTimeout(() => {
+    document.getElementById('bar-top').classList.add('open');
+    document.getElementById('bar-bottom').classList.add('open');
+    document.getElementById('hud').classList.add('visible');
+    document.getElementById('scroll-cta').classList.add('visible');
+    started = true;
+    clock.start();
+  }, 400);
+}
+
+// ─── ANIMATE ───────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (!started) return;
+
+  t += speed;
+
+  // Camera
+  const camData = lerpCam(t);
+  camera.position.set(...camData.pos);
+  camera.lookAt(camData.look[0], camData.look[1], camData.look[2]);
+  camera.fov = camData.fov;
+  camera.updateProjectionMatrix();
+
+  // Move car along tunnel (looped)
+  if (carModel) {
+    const loopZ = -((t * 80) % 80);
+    carModel.position.z = loopZ;
+    // Subtle body roll
+    carModel.rotation.z = Math.sin(t * 3) * 0.015;
+  }
+
+  // Animate tunnel lights
+  const elapsed = clock.elapsedTime;
+  tunnelLights.forEach((tl, i) => {
+    tl.light.intensity = tl.baseIntensity * (0.6 + 0.4 * Math.sin(elapsed * 2.5 + i * 0.8));
+    // Colour pulse
+    const h = (elapsed * 0.05 + i * 0.05) % 1;
+    tl.light.color.setHSL(0.05 + Math.sin(h * 6) * 0.02, 1, 0.5);
+  });
+
+  // Ground light pulse
+  groundLight.intensity = 1.5 + Math.sin(elapsed * 4) * 0.5;
+  groundLight.position.z = carModel ? carModel.position.z : 0;
+
+  // Speed lines for fast sections
+  const phase = t % 1;
+  const inFast = (phase > 0.55 && phase < 0.9);
+  drawSpeedLines(inFast ? 0.6 : 0);
+
+  // Speed counter
+  const targetSpeed = inFast ? 190 + Math.sin(elapsed * 3) * 15 : 80 + Math.sin(elapsed) * 20;
+  updateSpeedCounter(targetSpeed);
+
+  // Flash
+  triggerFlash(t);
+
+  renderer.render(scene, camera);
+}
+
+// ─── RESIZE ────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  speedCanvas.width = window.innerWidth;
+  speedCanvas.height = window.innerHeight;
+});
+
+// ─── CURSOR ────────────────────────────────────────────────────────────────
+const cur = document.getElementById('cursor');
+const curRing = document.getElementById('cursor-ring');
+let mx = 0, my = 0, rx = 0, ry = 0;
+document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+(function cursorLoop() {
+  rx += (mx - rx) * 0.12;
+  ry += (my - ry) * 0.12;
+  cur.style.left = mx + 'px'; cur.style.top = my + 'px';
+  curRing.style.left = rx + 'px'; curRing.style.top = ry + 'px';
+  requestAnimationFrame(cursorLoop);
+})();
+
+// ─── SCROLL REVEALS ────────────────────────────────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.15 });
+
+document.querySelectorAll('[data-reveal]').forEach(el => observer.observe(el));
+
+const buildObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.build-step').forEach((s, i) => {
+        setTimeout(() => s.classList.add('visible'), i * 120);
+      });
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('[data-build-grid]').forEach(el => buildObserver.observe(el));
+
+// ─── SCROLL: adjust car speed & camera ─────────────────────────────────────
+let scrollRatio = 0;
+window.addEventListener('scroll', () => {
+  scrollRatio = window.scrollY / (document.body.scrollHeight - window.innerHeight);
+  // Pause cinematic when deep in scroll
+  speed = scrollRatio > 0.05 ? 0.0003 : 0.0014;
+  // Fade HUD on scroll
+  document.getElementById('hud').style.opacity = scrollRatio < 0.05 ? '1' : Math.max(0, 1 - scrollRatio * 10);
+  document.getElementById('scroll-cta').style.opacity = scrollRatio > 0.02 ? '0' : '1';
+});
+
+// ─── START RENDER LOOP (models load async) ─────────────────────────────────
+animate();
+
+// Fallback if GLTFLoader script fails completely
+setTimeout(() => {
+  if (!modelsLoaded.car) { createFallbackCar(); modelsLoaded.car = true; }
+  if (!modelsLoaded.tunnel) { createFallbackTunnel(); modelsLoaded.tunnel = true; }
+  if (!started) startExperience();
+}, 8000);
+</script>
+</body>
+</html>
