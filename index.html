@@ -740,6 +740,8 @@ class GLTFLoader {
 
 let carModel = null;
 let tunnelModel = null;
+let wheelMeshes = [];
+let roadSegments = [];
 let modelsLoaded = { car: false, tunnel: false };
 
 function checkAllLoaded() {
@@ -781,10 +783,18 @@ script.onload = () => {
       carModel.position.set(0, -0.15, -8);
       carModel.rotation.y = Math.PI;
 
+      wheelMeshes = [];
       carModel.traverse(child => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
+
+          // Grab the real wheel meshes from this GLB by name.
+          // The McLaren file uses names like ...Wheel1A... for the tire/rim parts.
+          if (child.name && child.name.toLowerCase().includes('wheel')) {
+            wheelMeshes.push(child);
+          }
+
           if (child.material) {
             child.material.envMapIntensity = 2.2;
             child.material.needsUpdate = true;
@@ -808,31 +818,10 @@ script.onload = () => {
     (gltf) => {
       createCinematicTunnelShell();
 
+      // The uploaded tunnel_road GLB is just a short road piece, not a full 120m road.
+      // So we use it as a repeated road tile instead of scaling it into a giant wall.
       const rawTunnel = gltf.scene;
-      tunnelModel = new THREE.Group();
-      tunnelModel.add(rawTunnel);
-
-      // The tunnel_road GLB's long direction is X, so rotate it into Z.
-      const box = new THREE.Box3().setFromObject(rawTunnel);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      rawTunnel.position.sub(center);
-
-      const desiredTunnelLength = 120;
-      tunnelModel.scale.setScalar(desiredTunnelLength / Math.max(size.x, 0.001));
-      tunnelModel.rotation.y = Math.PI / 2;
-      tunnelModel.position.set(0, -1.05, -55);
-
-      tunnelModel.traverse(child => {
-        if (child.isMesh) {
-          child.receiveShadow = true;
-          child.castShadow = false;
-          if (child.material) {
-            child.material.envMapIntensity = 0.7;
-            child.material.needsUpdate = true;
-          }
-        }
-      });
+      tunnelModel = buildRoadFromSegment(rawTunnel);
       scene.add(tunnelModel);
       modelsLoaded.tunnel = true;
       checkAllLoaded();
@@ -848,48 +837,91 @@ script.onload = () => {
 };
 
 
-// ─── PROCEDURAL TUNNEL SHELL (fixes thin/flat tunnel GLB issue) ────────────
+// ─── PROCEDURAL TUNNEL SHELL + CLEAN ROAD ────────────────────────────────
 let tunnelShell = null;
 function createCinematicTunnelShell() {
   if (tunnelShell) return tunnelShell;
   tunnelShell = new THREE.Group();
 
   const shellMat = new THREE.MeshStandardMaterial({
-    color: 0x0b0b0d,
-    metalness: 0.35,
-    roughness: 0.65,
+    color: 0x08080a,
+    metalness: 0.2,
+    roughness: 0.8,
     side: THREE.BackSide
   });
 
-  const shell = new THREE.Mesh(
-    new THREE.CylinderGeometry(7, 7, 150, 48, 1, true),
-    shellMat
-  );
+  // Big dark tunnel around the car. The lower part is hidden by the road plane.
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.5, 180, 56, 1, true), shellMat);
   shell.rotation.x = Math.PI / 2;
-  shell.position.set(0, 2.3, -55);
+  shell.position.set(0, 2.2, -65);
   shell.receiveShadow = true;
   tunnelShell.add(shell);
 
+  // Clean flat road, so the GLB tile cannot become a huge vertical wall again.
   const roadMat = new THREE.MeshStandardMaterial({
-    color: 0x070707,
-    metalness: 0.15,
-    roughness: 0.9
+    color: 0x050505,
+    metalness: 0.08,
+    roughness: 0.92
   });
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(11, 150), roadMat);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 180), roadMat);
   road.rotation.x = -Math.PI / 2;
-  road.position.set(0, -1.25, -55);
+  road.position.set(0, -1.18, -65);
   road.receiveShadow = true;
   tunnelShell.add(road);
 
-  const stripMat = new THREE.MeshBasicMaterial({ color: 0xff5500 });
-  [-5.2, 5.2].forEach(x => {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 145), stripMat);
-    strip.position.set(x, 0.35, -55);
-    tunnelShell.add(strip);
+  // Thin lane/edge lines on the road, not giant yellow walls.
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xd69a25 });
+  [-3.9, 3.9].forEach(x => {
+    const line = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.025, 175), lineMat);
+    line.position.set(x, -1.155, -65);
+    tunnelShell.add(line);
   });
+
+  const centerMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  for (let i = 0; i < 34; i++) {
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.03, 1.8), centerMat);
+    dash.position.set(0, -1.145, 15 - i * 5);
+    tunnelShell.add(dash);
+  }
 
   scene.add(tunnelShell);
   return tunnelShell;
+}
+
+function buildRoadFromSegment(rawSegment) {
+  const roadGroup = new THREE.Group();
+  roadSegments = [];
+
+  const box = new THREE.Box3().setFromObject(rawSegment);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  rawSegment.position.sub(center);
+
+  const desiredWidth = 8.6;
+  const tileScale = desiredWidth / Math.max(size.x, 0.001);
+  const tileLength = Math.max(size.z * tileScale, 0.9);
+  const tileCount = 95;
+
+  rawSegment.traverse(child => {
+    if (child.isMesh) {
+      child.receiveShadow = true;
+      child.castShadow = false;
+      if (child.material) {
+        child.material.envMapIntensity = 0.35;
+        child.material.needsUpdate = true;
+      }
+    }
+  });
+
+  for (let i = 0; i < tileCount; i++) {
+    const tile = rawSegment.clone(true);
+    tile.scale.setScalar(tileScale);
+    tile.position.set(0, -1.08, 18 - i * tileLength);
+    roadGroup.add(tile);
+    roadSegments.push(tile);
+  }
+
+  return roadGroup;
 }
 
 // ─── FALLBACK GEOMETRY ─────────────────────────────────────────────────────
@@ -1066,22 +1098,51 @@ function animate() {
 
   t += speed;
 
-  // Camera
-  const camData = lerpCam(t);
-  camera.position.set(...camData.pos);
-  camera.lookAt(camData.look[0], camData.look[1], camData.look[2]);
-  camera.fov = camData.fov;
-  camera.updateProjectionMatrix();
+  const elapsed = clock.elapsedTime;
+  const driveSpeed = 7.5; // scene units per second
+  const carZ = 6 - ((elapsed * driveSpeed) % 105);
+  const phase = t % 1;
 
-  // Keep the hero car framed. The tunnel/camera creates the speed feeling.
+  // Move the car forward through the tunnel.
   if (carModel) {
-    carModel.position.z = -8;
-    carModel.rotation.z = Math.sin(t * 3) * 0.012;
-    carModel.rotation.y = Math.PI + Math.sin(t * 2) * 0.025;
+    carModel.position.z = carZ;
+    carModel.position.x = Math.sin(elapsed * 0.7) * 0.12;
+    carModel.rotation.z = Math.sin(elapsed * 1.5) * 0.012;
+    carModel.rotation.y = Math.PI + Math.sin(elapsed * 0.9) * 0.018;
+
+    // Spin real wheel meshes. Axis can differ between GLBs, so X gives the cleanest visible spin here.
+    wheelMeshes.forEach(w => { w.rotation.x -= delta * 18; });
+  }
+
+  // Recycle road tiles behind the car so the road feels endless.
+  roadSegments.forEach(tile => {
+    if (tile.position.z - carZ > 24) tile.position.z -= 105;
+  });
+
+  // Camera chase/orbit animation. It follows the moving car instead of staying locked.
+  const camMode = (elapsed * 0.055) % 1;
+  const side = Math.sin(elapsed * 0.45) * 2.2;
+  const height = 1.35 + Math.sin(elapsed * 0.33) * 0.35;
+  const distance = 7.0 + Math.sin(elapsed * 0.28) * 1.2;
+
+  if (carModel) {
+    if (camMode < 0.45) {
+      camera.position.set(side, height, carZ + distance);
+      camera.lookAt(carModel.position.x, 0.05, carZ - 4.0);
+      camera.fov = 58;
+    } else if (camMode < 0.72) {
+      camera.position.set(4.2, 0.75, carZ + 1.5);
+      camera.lookAt(carModel.position.x, 0.05, carZ - 5.0);
+      camera.fov = 64;
+    } else {
+      camera.position.set(-2.2, 2.8, carZ + 8.0);
+      camera.lookAt(carModel.position.x, 0.1, carZ - 3.5);
+      camera.fov = 52;
+    }
+    camera.updateProjectionMatrix();
   }
 
   // Animate tunnel lights
-  const elapsed = clock.elapsedTime;
   tunnelLights.forEach((tl, i) => {
     tl.light.intensity = tl.baseIntensity * (0.6 + 0.4 * Math.sin(elapsed * 2.5 + i * 0.8));
     // Colour pulse
@@ -1094,7 +1155,6 @@ function animate() {
   groundLight.position.z = carModel ? carModel.position.z : 0;
 
   // Speed lines for fast sections
-  const phase = t % 1;
   const inFast = (phase > 0.55 && phase < 0.9);
   drawSpeedLines(inFast ? 0.6 : 0);
 
