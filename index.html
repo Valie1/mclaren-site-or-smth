@@ -640,408 +640,236 @@
 
 <!-- THREE.JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 // ─── GLOBALS ───────────────────────────────────────────────────────────────
 const canvas = document.getElementById('three-canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.08;
 renderer.physicallyCorrectLights = true;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x050507, 0.018);
+scene.background = new THREE.Color(0x050507);
+scene.fog = new THREE.FogExp2(0x050507, 0.025);
 
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
-camera.position.set(0, 2, 10);
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 1.8, 8);
 
-// ─── LOADER MANAGER ────────────────────────────────────────────────────────
+// IMPORTANT: the uploaded tunnel_road.glb creates the huge ribbed wall/pipe look.
+// This version uses a clean procedural tunnel + road so the car scene stays stable.
+const ROAD_Y = -0.75;
+const LOOP_LENGTH = 125;
+const CAR_SPEED = 13.5; // units per second
+
+// ─── LOADER ────────────────────────────────────────────────────────────────
 const bar = document.getElementById('loader-bar');
 const pct = document.getElementById('loader-pct');
 const manager = new THREE.LoadingManager();
-let loadedPct = 0;
 manager.onProgress = (url, loaded, total) => {
-  loadedPct = Math.round((loaded / total) * 100);
+  const loadedPct = Math.round((loaded / total) * 100);
   bar.style.width = loadedPct + '%';
   pct.textContent = loadedPct + '%';
 };
 manager.onLoad = () => {
   bar.style.width = '100%';
   pct.textContent = '100%';
-  setTimeout(startExperience, 600);
+  setTimeout(startExperience, 450);
 };
 
 // ─── LIGHTS ────────────────────────────────────────────────────────────────
-// Ambient
-const ambient = new THREE.AmbientLight(0x1a1a2e, 0.8);
-scene.add(ambient);
+scene.add(new THREE.AmbientLight(0x1b1b24, 1.2));
 
-// Key light (warm orange-white from above-right)
-const keyLight = new THREE.DirectionalLight(0xffd580, 6);
-keyLight.position.set(8, 12, -5);
-keyLight.castShadow = true;
-keyLight.shadow.mapSize.set(2048, 2048);
-keyLight.shadow.camera.near = 0.5;
-keyLight.shadow.camera.far = 80;
-scene.add(keyLight);
+const sun = new THREE.DirectionalLight(0xffd9a0, 4.2);
+sun.position.set(-4, 9, 7);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 80;
+scene.add(sun);
 
-// Fill light (cool blue from left)
-const fillLight = new THREE.DirectionalLight(0x3366ff, 2);
-fillLight.position.set(-10, 4, 0);
-scene.add(fillLight);
+const rim = new THREE.DirectionalLight(0xff5500, 3.0);
+rim.position.set(5, 3, -8);
+scene.add(rim);
 
-// Rim light (orange from behind-above)
-const rimLight = new THREE.DirectionalLight(0xff5500, 4);
-rimLight.position.set(-2, 6, -15);
-scene.add(rimLight);
+const blueFill = new THREE.DirectionalLight(0x304cff, 1.2);
+blueFill.position.set(-5, 2, -4);
+scene.add(blueFill);
 
-// Tunnel strip lights (animated point lights)
+const carGlow = new THREE.PointLight(0xff6a00, 3.5, 18);
+carGlow.position.set(0, 1.2, 0);
+scene.add(carGlow);
+
 const tunnelLights = [];
-const lightColors = [0xff8800, 0xff5500, 0xffcc44, 0xff4400];
-for (let i = 0; i < 12; i++) {
-  const pl = new THREE.PointLight(lightColors[i % 4], 3, 20);
-  pl.position.set(
-    (Math.random() - 0.5) * 6,
-    2 + Math.random() * 2,
-    -i * 8 - 5
-  );
-  scene.add(pl);
-  tunnelLights.push({ light: pl, baseZ: pl.position.z, baseIntensity: pl.intensity });
+for (let i = 0; i < 28; i++) {
+  const z = 8 - i * 5;
+  const l = new THREE.PointLight(i % 2 ? 0xff5a00 : 0xffbb55, 2.8, 14);
+  l.position.set(i % 2 ? -3.3 : 3.3, 2.7, z);
+  scene.add(l);
+  tunnelLights.push(l);
 }
 
-// Ground bounce light
-const groundLight = new THREE.PointLight(0xff3300, 2, 15);
-groundLight.position.set(0, -1, 2);
-scene.add(groundLight);
+// ─── CLEAN PROCEDURAL ROAD + TUNNEL ───────────────────────────────────────
+function makeRoadAndTunnel() {
+  const group = new THREE.Group();
 
-// ─── GLB LOADERS ───────────────────────────────────────────────────────────
-// Inline GLTFLoader (r128 compatible)
-class GLTFLoader {
-  constructor(manager) {
-    this.manager = manager || THREE.DefaultLoadingManager;
-  }
-  load(url, onLoad, onProgress, onError) {
-    const loader = new THREE.FileLoader(this.manager);
-    loader.setResponseType('arraybuffer');
-    loader.load(url, (buffer) => {
-      this.parse(buffer, url, onLoad, onError);
-    }, onProgress, onError);
-  }
-  parse(buffer, path, onLoad, onError) {
-    // Use three.js built-in if available
-    if (THREE.GLTFLoader) { new THREE.GLTFLoader().parse(buffer, path, onLoad, onError); return; }
-    onError && onError(new Error('GLTFLoader not available'));
-  }
-}
-
-let carModel = null;
-let tunnelModel = null;
-let wheelMeshes = [];
-let roadSegments = [];
-let modelsLoaded = { car: false, tunnel: false };
-
-function checkAllLoaded() {
-  if (modelsLoaded.car && modelsLoaded.tunnel) {
-    manager.onLoad && manager.onLoad();
-  }
-}
-
-// Load GLTFLoader from jsDelivr (reliable CDN for Three.js extras)
-const script = document.createElement('script');
-script.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
-script.onerror = () => {
-  console.warn('GLTFLoader failed, using fallback geometry');
-  createFallbackCar();
-  createFallbackTunnel();
-  startExperience();
-};
-document.head.appendChild(script);
-
-script.onload = () => {
-  const gltfLoader = new THREE.GLTFLoader(manager);
-
-  // RELATIVE PATHS — works on GitHub Pages when GLBs are in the same folder
-  gltfLoader.load('1997_mclaren_f1_gt.glb',
-    (gltf) => {
-      const rawCar = gltf.scene;
-      carModel = new THREE.Group();
-      carModel.add(rawCar);
-
-      // Your McLaren GLB is imported extremely small, so scale by real car length.
-      const box = new THREE.Box3().setFromObject(rawCar);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      rawCar.position.sub(center);
-
-      const desiredCarLength = 5.2;
-      const carLength = Math.max(size.z, size.x, 0.001);
-      carModel.scale.setScalar(desiredCarLength / carLength);
-      carModel.position.set(0, -0.15, -8);
-      carModel.rotation.y = Math.PI;
-
-      wheelMeshes = [];
-      carModel.traverse(child => {
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-
-          // Grab the real wheel meshes from this GLB by name.
-          // The McLaren file uses names like ...Wheel1A... for the tire/rim parts.
-          if (child.name && child.name.toLowerCase().includes('wheel')) {
-            wheelMeshes.push(child);
-          }
-
-          if (child.material) {
-            child.material.envMapIntensity = 2.2;
-            child.material.needsUpdate = true;
-          }
-        }
-      });
-      scene.add(carModel);
-      modelsLoaded.car = true;
-      checkAllLoaded();
-    },
-    undefined,
-    (err) => {
-      console.warn('Car GLB load error:', err);
-      createFallbackCar();
-      modelsLoaded.car = true;
-      checkAllLoaded();
-    }
-  );
-
-  gltfLoader.load('tunnel_road.glb',
-    (gltf) => {
-      createCinematicTunnelShell();
-
-      // The uploaded tunnel_road GLB is just a short road piece, not a full 120m road.
-      // So we use it as a repeated road tile instead of scaling it into a giant wall.
-      const rawTunnel = gltf.scene;
-      tunnelModel = buildRoadFromSegment(rawTunnel);
-      scene.add(tunnelModel);
-      modelsLoaded.tunnel = true;
-      checkAllLoaded();
-    },
-    undefined,
-    (err) => {
-      console.warn('Tunnel GLB load error:', err);
-      createFallbackTunnel();
-      modelsLoaded.tunnel = true;
-      checkAllLoaded();
-    }
-  );
-};
-
-
-// ─── PROCEDURAL TUNNEL SHELL + CLEAN ROAD ────────────────────────────────
-let tunnelShell = null;
-function createCinematicTunnelShell() {
-  if (tunnelShell) return tunnelShell;
-  tunnelShell = new THREE.Group();
-
-  const shellMat = new THREE.MeshStandardMaterial({
-    color: 0x08080a,
-    metalness: 0.2,
-    roughness: 0.8,
+  const tunnelMat = new THREE.MeshStandardMaterial({
+    color: 0x111116,
+    metalness: 0.25,
+    roughness: 0.82,
     side: THREE.BackSide
   });
-
-  // Big dark tunnel around the car. The lower part is hidden by the road plane.
-  const shell = new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.5, 180, 56, 1, true), shellMat);
-  shell.rotation.x = Math.PI / 2;
-  shell.position.set(0, 2.2, -65);
-  shell.receiveShadow = true;
-  tunnelShell.add(shell);
-
-  // Clean flat road, so the GLB tile cannot become a huge vertical wall again.
-  const roadMat = new THREE.MeshStandardMaterial({
-    color: 0x050505,
-    metalness: 0.08,
-    roughness: 0.92
-  });
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 180), roadMat);
-  road.rotation.x = -Math.PI / 2;
-  road.position.set(0, -1.18, -65);
-  road.receiveShadow = true;
-  tunnelShell.add(road);
-
-  // Thin lane/edge lines on the road, not giant yellow walls.
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xd69a25 });
-  [-3.9, 3.9].forEach(x => {
-    const line = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.025, 175), lineMat);
-    line.position.set(x, -1.155, -65);
-    tunnelShell.add(line);
-  });
-
-  const centerMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
-  for (let i = 0; i < 34; i++) {
-    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.03, 1.8), centerMat);
-    dash.position.set(0, -1.145, 15 - i * 5);
-    tunnelShell.add(dash);
-  }
-
-  scene.add(tunnelShell);
-  return tunnelShell;
-}
-
-function buildRoadFromSegment(rawSegment) {
-  const roadGroup = new THREE.Group();
-  roadSegments = [];
-
-  const box = new THREE.Box3().setFromObject(rawSegment);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  rawSegment.position.sub(center);
-
-  const desiredWidth = 8.6;
-  const tileScale = desiredWidth / Math.max(size.x, 0.001);
-  const tileLength = Math.max(size.z * tileScale, 0.9);
-  const tileCount = 95;
-
-  rawSegment.traverse(child => {
-    if (child.isMesh) {
-      child.receiveShadow = true;
-      child.castShadow = false;
-      if (child.material) {
-        child.material.envMapIntensity = 0.35;
-        child.material.needsUpdate = true;
-      }
-    }
-  });
-
-  for (let i = 0; i < tileCount; i++) {
-    const tile = rawSegment.clone(true);
-    tile.scale.setScalar(tileScale);
-    tile.position.set(0, -1.08, 18 - i * tileLength);
-    roadGroup.add(tile);
-    roadSegments.push(tile);
-  }
-
-  return roadGroup;
-}
-
-// ─── FALLBACK GEOMETRY ─────────────────────────────────────────────────────
-function createFallbackCar() {
-  const group = new THREE.Group();
-  // Body
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 4.2), bodyMat);
-  body.position.y = 0.5;
-  group.add(body);
-  // Roof
-  const roofGeo = new THREE.BoxGeometry(1.4, 0.45, 2.2);
-  const roof = new THREE.Mesh(roofGeo, bodyMat);
-  roof.position.set(0, 0.97, -0.3);
-  group.add(roof);
-  // Wheels
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.5, roughness: 0.6 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0xd4aa50, metalness: 1, roughness: 0.1 });
-  [[-0.95, 0.25, 1.4],[0.95, 0.25, 1.4],[-0.95, 0.25, -1.4],[0.95, 0.25, -1.4]].forEach(([x,y,z]) => {
-    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.28, 20), wheelMat);
-    wheel.rotation.z = Math.PI/2;
-    wheel.position.set(x, y, z);
-    wheel.castShadow = true;
-    group.add(wheel);
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.3, 8), rimMat);
-    rim.rotation.z = Math.PI/2;
-    rim.position.set(x > 0 ? x+0.01 : x-0.01, y, z);
-    group.add(rim);
-  });
-  group.scale.set(1.8, 1.8, 1.8);
-  group.position.set(0, -0.5, -8);
-  group.rotation.y = Math.PI;
-  group.traverse(c => { if (c.isMesh) c.castShadow = true; });
-  scene.add(group);
-  carModel = group;
-}
-
-function createFallbackTunnel() {
-  createCinematicTunnelShell();
-  const group = new THREE.Group();
-  const tunMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.3, roughness: 0.8, side: THREE.BackSide });
-  
-  // Long tunnel cylinder
-  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 120, 20, 1, true), tunMat);
+  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(6.4, 6.4, LOOP_LENGTH + 35, 64, 1, true), tunnelMat);
   tunnel.rotation.x = Math.PI / 2;
-  tunnel.position.set(0, 2, -60);
+  tunnel.position.set(0, 1.55, -LOOP_LENGTH / 2 + 8);
+  tunnel.receiveShadow = true;
   group.add(tunnel);
 
-  // Road
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, metalness: 0.1, roughness: 0.95 });
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(7, 120), roadMat);
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x151313, metalness: 0.05, roughness: 0.92 });
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(7.4, LOOP_LENGTH + 35, 1, 1), roadMat);
   road.rotation.x = -Math.PI / 2;
-  road.position.set(0, -2.8, -60);
+  road.position.set(0, ROAD_Y, -LOOP_LENGTH / 2 + 8);
   road.receiveShadow = true;
   group.add(road);
 
-  // Road markings
-  const markMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
-  for (let i = 0; i < 15; i++) {
-    const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 3), markMat);
-    mark.rotation.x = -Math.PI / 2;
-    mark.position.set(0, -2.79, -i * 8);
-    group.add(mark);
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xc9933a });
+  [-3.25, 3.25].forEach(x => {
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.025, LOOP_LENGTH + 25), edgeMat);
+    edge.position.set(x, ROAD_Y + 0.018, -LOOP_LENGTH / 2 + 8);
+    group.add(edge);
+  });
+
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xf0ede8 });
+  for (let i = 0; i < 24; i++) {
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.018, 2.5), dashMat);
+    dash.position.set(0, ROAD_Y + 0.025, 8 - i * 5.2);
+    group.add(dash);
   }
-  
-  group.position.set(0, 0, -5);
+
+  const ribMat = new THREE.MeshBasicMaterial({ color: 0x2a2520, transparent: true, opacity: 0.45 });
+  for (let i = 0; i < 32; i++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(6.42, 0.018, 8, 96), ribMat);
+    ring.position.set(0, 1.55, 8 - i * 4.0);
+    ring.rotation.x = Math.PI / 2;
+    group.add(ring);
+  }
+
   scene.add(group);
-  tunnelModel = group;
+  return group;
+}
+makeRoadAndTunnel();
+
+// ─── CAR LOADING + WHEELS ─────────────────────────────────────────────────
+let carRoot = new THREE.Group();
+let carVisual = null;
+let wheelMeshes = [];
+scene.add(carRoot);
+
+function createFallbackCar() {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x9d8a5e, metalness: 0.9, roughness: 0.22 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 4.35), bodyMat);
+  body.position.y = ROAD_Y + 0.55;
+  body.castShadow = true;
+  group.add(body);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.42, 1.65), bodyMat);
+  roof.position.set(0, ROAD_Y + 1.02, -0.35);
+  roof.castShadow = true;
+  group.add(roof);
+
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x080808, metalness: 0.4, roughness: 0.6 });
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xc9933a, metalness: 1, roughness: 0.18 });
+  [[-1.05,1.35],[1.05,1.35],[-1.05,-1.35],[1.05,-1.35]].forEach(([x,z]) => {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.32, 32), wheelMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(x, ROAD_Y + 0.33, z);
+    wheel.castShadow = true;
+    group.add(wheel);
+    wheelMeshes.push(wheel);
+    const rimMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.34, 16), rimMat);
+    rimMesh.rotation.z = Math.PI / 2;
+    rimMesh.position.copy(wheel.position);
+    group.add(rimMesh);
+    wheelMeshes.push(rimMesh);
+  });
+  carRoot.add(group);
+  carVisual = group;
 }
 
-// ─── CAMERA PATH ───────────────────────────────────────────────────────────
-// Keyframes: [x, y, z, lookAtX, lookAtY, lookAtZ, fov]
-const camPath = [
-  { t: 0,    pos: [0, 1.35, 5.5],   look: [0, 0.45, -8],   fov: 42 },
-  { t: 0.12, pos: [0, 1.8, 8],      look: [0, 0.45, -8],   fov: 45 },
-  { t: 0.25, pos: [4.5, 0.9, -4.5], look: [0, 0.55, -8],   fov: 50 },
-  { t: 0.38, pos: [-4, 0.75, -10],  look: [0, 0.6, -8],    fov: 52 },
-  { t: 0.52, pos: [0, 5.2, -4],     look: [0, 0.15, -8],   fov: 46 },
-  { t: 0.68, pos: [0, 1.2, 2.5],    look: [0, 0.7, -18],   fov: 58 },
-  { t: 0.84, pos: [2.8, 1.1, -2],   look: [0, 0.55, -8],   fov: 48 },
-  { t: 1.0,  pos: [0, 1.35, 5.5],   look: [0, 0.45, -8],   fov: 42 },
-];
+function loadCar() {
+  const loader = new THREE.GLTFLoader(manager);
+  loader.load('1997_mclaren_f1_gt.glb', (gltf) => {
+    carVisual = gltf.scene;
 
-function lerpCam(t) {
-  t = t % 1;
-  let a = camPath[0], b = camPath[1];
-  for (let i = 0; i < camPath.length - 1; i++) {
-    if (t >= camPath[i].t && t <= camPath[i+1].t) { a = camPath[i]; b = camPath[i+1]; break; }
+    // Detect original long axis, scale by real car length, then align to road Z direction.
+    let rawBox = new THREE.Box3().setFromObject(carVisual);
+    const rawSize = rawBox.getSize(new THREE.Vector3());
+    const longAxis = rawSize.x >= rawSize.z ? 'x' : 'z';
+    const longest = Math.max(rawSize.x, rawSize.y, rawSize.z) || 1;
+    carVisual.scale.setScalar(4.65 / longest);
+    if (longAxis === 'x') carVisual.rotation.y = -Math.PI / 2;
+
+    carRoot.add(carVisual);
+
+    // Center model exactly on the road.
+    let box = new THREE.Box3().setFromObject(carVisual);
+    let center = box.getCenter(new THREE.Vector3());
+    carVisual.position.x -= center.x;
+    carVisual.position.z -= center.z;
+    box = new THREE.Box3().setFromObject(carVisual);
+    carVisual.position.y += ROAD_Y - box.min.y;
+
+    carVisual.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (child.material) {
+          child.material.envMapIntensity = 1.15;
+          child.material.needsUpdate = true;
+        }
+        const n = (child.name || '').toLowerCase();
+        const matName = (child.material && child.material.name ? child.material.name : '').toLowerCase();
+        if (n.includes('wheel') || matName.includes('wheel')) wheelMeshes.push(child);
+      }
+    });
+
+    if (wheelMeshes.length === 0) console.warn('No wheel meshes found by name; car will still move, but wheel spin may be limited.');
+  }, undefined, (err) => {
+    console.warn('Car GLB failed, using fallback:', err);
+    createFallbackCar();
+  });
+}
+loadCar();
+
+// Safety fallback if CDN/model loading hangs.
+setTimeout(() => {
+  if (!carVisual) {
+    createFallbackCar();
+    startExperience();
   }
-  const f = (a.t === b.t) ? 0 : (t - a.t) / (b.t - a.t);
-  const s = f * f * (3 - 2 * f); // smoothstep
-
-  const px = a.pos[0] + (b.pos[0]-a.pos[0])*s;
-  const py = a.pos[1] + (b.pos[1]-a.pos[1])*s;
-  const pz = a.pos[2] + (b.pos[2]-a.pos[2])*s;
-  const lx = a.look[0] + (b.look[0]-a.look[0])*s;
-  const ly = a.look[1] + (b.look[1]-a.look[1])*s;
-  const lz = a.look[2] + (b.look[2]-a.look[2])*s;
-  const fov = a.fov + (b.fov - a.fov) * s;
-  return { pos: [px,py,pz], look: [lx,ly,lz], fov };
-}
+}, 9000);
 
 // ─── SPEED LINES ───────────────────────────────────────────────────────────
 const speedCanvas = document.getElementById('speed-canvas');
 const sCtx = speedCanvas.getContext('2d');
-speedCanvas.width = window.innerWidth;
-speedCanvas.height = window.innerHeight;
-
+function resizeSpeedCanvas(){ speedCanvas.width = window.innerWidth; speedCanvas.height = window.innerHeight; }
+resizeSpeedCanvas();
 function drawSpeedLines(intensity) {
   speedCanvas.style.opacity = intensity;
   sCtx.clearRect(0, 0, speedCanvas.width, speedCanvas.height);
   if (intensity < 0.01) return;
-  const cx = speedCanvas.width / 2;
-  const cy = speedCanvas.height / 2;
-  sCtx.strokeStyle = `rgba(255,100,20,${intensity * 0.25})`;
-  sCtx.lineWidth = 0.5;
-  for (let i = 0; i < 60; i++) {
-    const angle = (i / 60) * Math.PI * 2;
-    const r1 = 250 + Math.random() * 100;
-    const r2 = r1 + 80 + Math.random() * 120;
+  const cx = speedCanvas.width / 2, cy = speedCanvas.height / 2;
+  sCtx.strokeStyle = `rgba(255,100,20,${intensity * 0.23})`;
+  sCtx.lineWidth = 0.65;
+  for (let i = 0; i < 46; i++) {
+    const angle = (i / 46) * Math.PI * 2;
+    const r1 = 150 + Math.random() * 180;
+    const r2 = r1 + 120 + Math.random() * 180;
     sCtx.beginPath();
     sCtx.moveTo(cx + Math.cos(angle)*r1, cy + Math.sin(angle)*r1);
     sCtx.lineTo(cx + Math.cos(angle)*r2, cy + Math.sin(angle)*r2);
@@ -1049,35 +877,31 @@ function drawSpeedLines(intensity) {
   }
 }
 
-// ─── HUD COUNTER ───────────────────────────────────────────────────────────
+// ─── HUD / UI ──────────────────────────────────────────────────────────────
 const speedCounter = document.getElementById('speed-counter');
 let displaySpeed = 0;
 function updateSpeedCounter(target) {
-  displaySpeed += (target - displaySpeed) * 0.08;
-  const s = Math.floor(displaySpeed).toString().padStart(3, '0');
-  speedCounter.textContent = s + ' MPH';
+  displaySpeed += (target - displaySpeed) * 0.06;
+  speedCounter.textContent = Math.floor(displaySpeed).toString().padStart(3, '0') + ' MPH';
 }
 
-// ─── GLARE FLASH ───────────────────────────────────────────────────────────
 const glare = document.getElementById('glare');
-const flashTimes = [0.18, 0.28, 0.38, 0.48];
-let lastFlash = -1;
-function triggerFlash(t) {
-  const idx = flashTimes.findIndex(ft => Math.abs(t % 1 - ft) < 0.008);
-  if (idx !== -1 && idx !== lastFlash) {
-    lastFlash = idx;
-    glare.style.opacity = '0.12';
-    setTimeout(() => glare.style.opacity = '0', 120);
+let lastFlashSecond = -1;
+function maybeFlash(elapsed) {
+  const second = Math.floor(elapsed * 1.4);
+  if (second !== lastFlashSecond && second % 5 === 0) {
+    lastFlashSecond = second;
+    glare.style.opacity = '0.08';
+    setTimeout(() => glare.style.opacity = '0', 90);
   }
 }
 
-// ─── ANIMATION STATE ───────────────────────────────────────────────────────
-let t = 0;
-let speed = 0.0014;
 let started = false;
-let clock = new THREE.Clock();
-
+let experienceStartedOnce = false;
+const clock = new THREE.Clock();
 function startExperience() {
+  if (experienceStartedOnce) return;
+  experienceStartedOnce = true;
   document.getElementById('loader').classList.add('hidden');
   setTimeout(() => {
     document.getElementById('bar-top').classList.add('open');
@@ -1086,101 +910,86 @@ function startExperience() {
     document.getElementById('scroll-cta').classList.add('visible');
     started = true;
     clock.start();
-  }, 400);
+  }, 350);
 }
 
-// ─── ANIMATE ───────────────────────────────────────────────────────────────
+function smoothstep(x){ return x*x*(3-2*x); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function interpolateOffset(phase){
+  const shots = [
+    {t:0.00, pos:[-2.6, 1.55, 6.0], look:[0, 0.55, -2.0], fov:58}, // rear-left follow
+    {t:0.24, pos:[4.8, 1.15, 1.6], look:[0, 0.55, -1.6], fov:62},  // side tracking
+    {t:0.48, pos:[1.7, 0.85, -6.2], look:[0, 0.5, 1.4], fov:67},  // front low
+    {t:0.70, pos:[0.0, 4.2, 3.4], look:[0, 0.2, -1.4], fov:48},   // high cinematic
+    {t:1.00, pos:[-2.6, 1.55, 6.0], look:[0, 0.55, -2.0], fov:58}
+  ];
+  let a=shots[0], b=shots[1];
+  for (let i=0; i<shots.length-1; i++) if (phase >= shots[i].t && phase <= shots[i+1].t){ a=shots[i]; b=shots[i+1]; break; }
+  const f = smoothstep((phase-a.t)/(b.t-a.t));
+  return {
+    pos:[lerp(a.pos[0],b.pos[0],f), lerp(a.pos[1],b.pos[1],f), lerp(a.pos[2],b.pos[2],f)],
+    look:[lerp(a.look[0],b.look[0],f), lerp(a.look[1],b.look[1],f), lerp(a.look[2],b.look[2],f)],
+    fov: lerp(a.fov,b.fov,f)
+  };
+}
+
+// ─── ANIMATION ─────────────────────────────────────────────────────────────
 function animate() {
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
-
+  const delta = Math.min(clock.getDelta(), 0.033);
   if (!started) return;
 
-  t += speed;
-
   const elapsed = clock.elapsedTime;
-  const driveSpeed = 7.5; // scene units per second
-  const carZ = 6 - ((elapsed * driveSpeed) % 105);
-  const phase = t % 1;
+  const travel = (elapsed * CAR_SPEED) % LOOP_LENGTH;
+  const carZ = 10 - travel;
 
-  // Move the car forward through the tunnel.
-  if (carModel) {
-    carModel.position.z = carZ;
-    carModel.position.x = Math.sin(elapsed * 0.7) * 0.12;
-    carModel.rotation.z = Math.sin(elapsed * 1.5) * 0.012;
-    carModel.rotation.y = Math.PI + Math.sin(elapsed * 0.9) * 0.018;
+  carRoot.position.set(0, 0, carZ);
+  carRoot.rotation.z = Math.sin(elapsed * 2.3) * 0.006;
+  carGlow.position.set(0, ROAD_Y + 1.0, carZ + 0.5);
 
-    // Spin real wheel meshes. Axis can differ between GLBs, so X gives the cleanest visible spin here.
-    wheelMeshes.forEach(w => { w.rotation.x -= delta * 18; });
-  }
+  // Rotate all mesh pieces whose names/materials contain Wheel.
+  // This is intentionally simple because the GLB wheel parts are already named with Wheel1A.
+  const spin = delta * CAR_SPEED * 2.8;
+  wheelMeshes.forEach(w => { w.rotation.x -= spin; });
 
-  // Recycle road tiles behind the car so the road feels endless.
-  roadSegments.forEach(tile => {
-    if (tile.position.z - carZ > 24) tile.position.z -= 105;
+  tunnelLights.forEach((l, i) => {
+    l.intensity = 2.1 + Math.sin(elapsed * 3 + i * 0.55) * 0.75;
+    const wrapped = 10 - ((travel + i * 5) % LOOP_LENGTH);
+    l.position.z = wrapped;
   });
 
-  // Camera chase/orbit animation. It follows the moving car instead of staying locked.
-  const camMode = (elapsed * 0.055) % 1;
-  const side = Math.sin(elapsed * 0.45) * 2.2;
-  const height = 1.35 + Math.sin(elapsed * 0.33) * 0.35;
-  const distance = 7.0 + Math.sin(elapsed * 0.28) * 1.2;
+  const phase = (elapsed * 0.065) % 1;
+  const shot = interpolateOffset(phase);
+  const desiredPos = new THREE.Vector3(carRoot.position.x + shot.pos[0], ROAD_Y + shot.pos[1], carRoot.position.z + shot.pos[2]);
+  const desiredLook = new THREE.Vector3(carRoot.position.x + shot.look[0], ROAD_Y + shot.look[1], carRoot.position.z + shot.look[2]);
 
-  if (carModel) {
-    if (camMode < 0.45) {
-      camera.position.set(side, height, carZ + distance);
-      camera.lookAt(carModel.position.x, 0.05, carZ - 4.0);
-      camera.fov = 58;
-    } else if (camMode < 0.72) {
-      camera.position.set(4.2, 0.75, carZ + 1.5);
-      camera.lookAt(carModel.position.x, 0.05, carZ - 5.0);
-      camera.fov = 64;
-    } else {
-      camera.position.set(-2.2, 2.8, carZ + 8.0);
-      camera.lookAt(carModel.position.x, 0.1, carZ - 3.5);
-      camera.fov = 52;
-    }
-    camera.updateProjectionMatrix();
-  }
+  camera.position.lerp(desiredPos, 0.075);
+  camera.lookAt(desiredLook);
+  camera.fov += (shot.fov - camera.fov) * 0.045;
+  camera.updateProjectionMatrix();
 
-  // Animate tunnel lights
-  tunnelLights.forEach((tl, i) => {
-    tl.light.intensity = tl.baseIntensity * (0.6 + 0.4 * Math.sin(elapsed * 2.5 + i * 0.8));
-    // Colour pulse
-    const h = (elapsed * 0.05 + i * 0.05) % 1;
-    tl.light.color.setHSL(0.05 + Math.sin(h * 6) * 0.02, 1, 0.5);
-  });
-
-  // Ground light pulse
-  groundLight.intensity = 1.5 + Math.sin(elapsed * 4) * 0.5;
-  groundLight.position.z = carModel ? carModel.position.z : 0;
-
-  // Speed lines for fast sections
-  const inFast = (phase > 0.55 && phase < 0.9);
-  drawSpeedLines(inFast ? 0.6 : 0);
-
-  // Speed counter
-  const targetSpeed = inFast ? 190 + Math.sin(elapsed * 3) * 15 : 80 + Math.sin(elapsed) * 20;
+  const targetSpeed = 175 + Math.sin(elapsed * 1.3) * 25;
   updateSpeedCounter(targetSpeed);
-
-  // Flash
-  triggerFlash(t);
+  drawSpeedLines(phase > 0.45 && phase < 0.72 ? 0.48 : 0.18);
+  maybeFlash(elapsed);
 
   renderer.render(scene, camera);
 }
+animate();
 
 // ─── RESIZE ────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  speedCanvas.width = window.innerWidth;
-  speedCanvas.height = window.innerHeight;
+  resizeSpeedCanvas();
 });
 
 // ─── CURSOR ────────────────────────────────────────────────────────────────
 const cur = document.getElementById('cursor');
 const curRing = document.getElementById('cursor-ring');
-let mx = 0, my = 0, rx = 0, ry = 0;
+let mx = window.innerWidth/2, my = window.innerHeight/2, rx = mx, ry = my;
 document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
 (function cursorLoop() {
   rx += (mx - rx) * 0.12;
@@ -1192,47 +1001,25 @@ document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; })
 
 // ─── SCROLL REVEALS ────────────────────────────────────────────────────────
 const observer = new IntersectionObserver((entries) => {
-  entries.forEach(e => {
-    if (e.isIntersecting) {
-      e.target.classList.add('visible');
-    }
-  });
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
 }, { threshold: 0.15 });
-
 document.querySelectorAll('[data-reveal]').forEach(el => observer.observe(el));
 
 const buildObserver = new IntersectionObserver((entries) => {
   entries.forEach(e => {
     if (e.isIntersecting) {
-      e.target.querySelectorAll('.build-step').forEach((s, i) => {
-        setTimeout(() => s.classList.add('visible'), i * 120);
-      });
+      e.target.querySelectorAll('.build-step').forEach((s, i) => setTimeout(() => s.classList.add('visible'), i * 120));
     }
   });
 }, { threshold: 0.1 });
-
 document.querySelectorAll('[data-build-grid]').forEach(el => buildObserver.observe(el));
 
-// ─── SCROLL: adjust car speed & camera ─────────────────────────────────────
-let scrollRatio = 0;
+// ─── SCROLL UI FADE ────────────────────────────────────────────────────────
 window.addEventListener('scroll', () => {
-  scrollRatio = window.scrollY / (document.body.scrollHeight - window.innerHeight);
-  // Pause cinematic when deep in scroll
-  speed = scrollRatio > 0.05 ? 0.0003 : 0.0014;
-  // Fade HUD on scroll
+  const scrollRatio = window.scrollY / (document.body.scrollHeight - window.innerHeight);
   document.getElementById('hud').style.opacity = scrollRatio < 0.05 ? '1' : Math.max(0, 1 - scrollRatio * 10);
   document.getElementById('scroll-cta').style.opacity = scrollRatio > 0.02 ? '0' : '1';
 });
-
-// ─── START RENDER LOOP (models load async) ─────────────────────────────────
-animate();
-
-// Fallback: if models haven't loaded after 15s, show fallback geometry
-setTimeout(() => {
-  if (!modelsLoaded.car) { createFallbackCar(); modelsLoaded.car = true; }
-  if (!modelsLoaded.tunnel) { createFallbackTunnel(); modelsLoaded.tunnel = true; }
-  if (!started) startExperience();
-}, 15000);
 </script>
 </body>
 </html>
