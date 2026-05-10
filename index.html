@@ -748,31 +748,43 @@ function checkAllLoaded() {
   }
 }
 
-// Load via GLTFLoader from CDN
+// Load GLTFLoader from jsDelivr (reliable CDN for Three.js extras)
 const script = document.createElement('script');
-script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/loaders/GLTFLoader.js';
+script.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js';
 script.onerror = () => {
-  // Fallback: create placeholder geometry
+  console.warn('GLTFLoader failed, using fallback geometry');
   createFallbackCar();
   createFallbackTunnel();
+  startExperience();
 };
 document.head.appendChild(script);
 
 script.onload = () => {
   const gltfLoader = new THREE.GLTFLoader(manager);
 
-  gltfLoader.load('/mnt/user-data/uploads/1997_mclaren_f1_gt.glb',
+  // RELATIVE PATHS — works on GitHub Pages when GLBs are in the same folder
+  gltfLoader.load('1997_mclaren_f1_gt.glb',
     (gltf) => {
       carModel = gltf.scene;
-      carModel.scale.set(1.8, 1.8, 1.8);
-      carModel.position.set(0, -0.5, 0);
-      carModel.rotation.y = Math.PI;
+      // Auto-scale to fit scene
+      const box = new THREE.Box3().setFromObject(carModel);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = 3.5 / maxDim;
+      carModel.scale.setScalar(scale);
+      // Centre it
+      box.setFromObject(carModel);
+      const center = box.getCenter(new THREE.Vector3());
+      carModel.position.sub(center);
+      carModel.position.y = -0.3;
+      carModel.rotation.y = Math.PI; // Face camera (rear shot)
       carModel.traverse(child => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
           if (child.material) {
-            child.material.envMapIntensity = 1.5;
+            child.material.envMapIntensity = 1.8;
+            child.material.needsUpdate = true;
           }
         }
       });
@@ -780,27 +792,43 @@ script.onload = () => {
       modelsLoaded.car = true;
       checkAllLoaded();
     },
-    null,
-    () => { createFallbackCar(); modelsLoaded.car = true; checkAllLoaded(); }
+    undefined,
+    (err) => {
+      console.warn('Car GLB load error:', err);
+      createFallbackCar();
+      modelsLoaded.car = true;
+      checkAllLoaded();
+    }
   );
 
-  gltfLoader.load('/mnt/user-data/uploads/tunnel_road.glb',
+  gltfLoader.load('tunnel_road.glb',
     (gltf) => {
       tunnelModel = gltf.scene;
-      tunnelModel.scale.set(2.5, 2.5, 2.5);
-      tunnelModel.position.set(0, -0.5, -20);
+      // Auto-scale tunnel
+      const box = new THREE.Box3().setFromObject(tunnelModel);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.z);
+      const scale = 30 / maxDim;
+      tunnelModel.scale.setScalar(scale);
+      tunnelModel.position.set(0, -1, -30);
       tunnelModel.traverse(child => {
         if (child.isMesh) {
           child.receiveShadow = true;
           child.castShadow = false;
+          if (child.material) child.material.envMapIntensity = 0.5;
         }
       });
       scene.add(tunnelModel);
       modelsLoaded.tunnel = true;
       checkAllLoaded();
     },
-    null,
-    () => { createFallbackTunnel(); modelsLoaded.tunnel = true; checkAllLoaded(); }
+    undefined,
+    (err) => {
+      console.warn('Tunnel GLB load error:', err);
+      createFallbackTunnel();
+      modelsLoaded.tunnel = true;
+      checkAllLoaded();
+    }
   );
 };
 
@@ -1091,12 +1119,12 @@ window.addEventListener('scroll', () => {
 // ─── START RENDER LOOP (models load async) ─────────────────────────────────
 animate();
 
-// Fallback if GLTFLoader script fails completely
+// Fallback: if models haven't loaded after 15s, show fallback geometry
 setTimeout(() => {
   if (!modelsLoaded.car) { createFallbackCar(); modelsLoaded.car = true; }
   if (!modelsLoaded.tunnel) { createFallbackTunnel(); modelsLoaded.tunnel = true; }
   if (!started) startExperience();
-}, 8000);
+}, 15000);
 </script>
 </body>
 </html>
