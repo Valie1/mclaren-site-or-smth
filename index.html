@@ -762,22 +762,33 @@ document.head.appendChild(script);
 script.onload = () => {
   const gltfLoader = new THREE.GLTFLoader(manager);
 
-  // RELATIVE PATHS — works on GitHub Pages when GLBs are in the same folder
+  // ── CAR ──────────────────────────────────────────────────────────────────
   gltfLoader.load('1997_mclaren_f1_gt.glb',
     (gltf) => {
       carModel = gltf.scene;
-      // Auto-scale to fit scene
-      const box = new THREE.Box3().setFromObject(carModel);
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const scale = 3.5 / maxDim;
-      carModel.scale.setScalar(scale);
-      // Centre it
-      box.setFromObject(carModel);
-      const center = box.getCenter(new THREE.Vector3());
-      carModel.position.sub(center);
-      carModel.position.y = -0.3;
-      carModel.rotation.y = Math.PI; // Face camera (rear shot)
+
+      // 1. Measure raw bounding box BEFORE any transform
+      const rawBox = new THREE.Box3().setFromObject(carModel);
+      const rawSize = rawBox.getSize(new THREE.Vector3());
+      const rawCenter = rawBox.getCenter(new THREE.Vector3());
+      console.log('CAR raw size:', rawSize, 'center:', rawCenter);
+
+      // 2. Scale so longest dimension = 4 world units (car-sized)
+      const longest = Math.max(rawSize.x, rawSize.y, rawSize.z);
+      const carScale = 4.0 / longest;
+      carModel.scale.setScalar(carScale);
+
+      // 3. After scaling, re-measure and centre XZ, sit on Y=0
+      const scaledBox = new THREE.Box3().setFromObject(carModel);
+      const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+      const scaledMin = scaledBox.min;
+      carModel.position.x = -scaledCenter.x;
+      carModel.position.z = -scaledCenter.z;
+      carModel.position.y = -scaledMin.y; // sit wheels on ground plane
+
+      // 4. Face rearward toward camera start
+      carModel.rotation.y = Math.PI;
+
       carModel.traverse(child => {
         if (child.isMesh) {
           child.castShadow = true;
@@ -793,42 +804,64 @@ script.onload = () => {
       checkAllLoaded();
     },
     undefined,
-    (err) => {
-      console.warn('Car GLB load error:', err);
-      createFallbackCar();
-      modelsLoaded.car = true;
-      checkAllLoaded();
-    }
+    (err) => { console.warn('Car load error:', err); createFallbackCar(); modelsLoaded.car = true; checkAllLoaded(); }
   );
 
+  // ── TUNNEL ────────────────────────────────────────────────────────────────
   gltfLoader.load('tunnel_road.glb',
     (gltf) => {
       tunnelModel = gltf.scene;
-      // Auto-scale tunnel
-      const box = new THREE.Box3().setFromObject(tunnelModel);
-      const size = box.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.z);
-      const scale = 30 / maxDim;
-      tunnelModel.scale.setScalar(scale);
-      tunnelModel.position.set(0, -1, -30);
+
+      // 1. Measure raw
+      const rawBox = new THREE.Box3().setFromObject(tunnelModel);
+      const rawSize = rawBox.getSize(new THREE.Vector3());
+      const rawCenter = rawBox.getCenter(new THREE.Vector3());
+      console.log('TUNNEL raw size:', rawSize, 'center:', rawCenter);
+
+      // 2. The tunnel should run along Z. Figure out which axis is "longest" = depth
+      // Scale so the tunnel is ~80 units long (camera travels through it)
+      const depthAxis = rawSize.z >= rawSize.x ? 'z' : 'x';
+      const depthVal = depthAxis === 'z' ? rawSize.z : rawSize.x;
+      const tunnelScale = 80 / Math.max(depthVal, 1);
+      tunnelModel.scale.setScalar(tunnelScale);
+
+      // 3. If tunnel runs along X, rotate it to run along Z
+      if (depthAxis === 'x') {
+        tunnelModel.rotation.y = Math.PI / 2;
+      }
+
+      // 4. Centre in XY, push back so car starts inside it
+      const scaledBox = new THREE.Box3().setFromObject(tunnelModel);
+      const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+      const scaledMin = scaledBox.min;
+      tunnelModel.position.x = -scaledCenter.x;
+      tunnelModel.position.z = -scaledCenter.z + 10; // offset so car is inside
+      tunnelModel.position.y = -scaledMin.y - 0.1;  // sit on ground
+
       tunnelModel.traverse(child => {
         if (child.isMesh) {
           child.receiveShadow = true;
           child.castShadow = false;
-          if (child.material) child.material.envMapIntensity = 0.5;
+          if (child.material) {
+            child.material.side = THREE.DoubleSide; // see inside tunnel walls
+            child.material.envMapIntensity = 0.3;
+          }
         }
       });
+      // Duplicate tunnel instances along Z for infinite effect
+      for (let i = 1; i <= 3; i++) {
+        const clone = tunnelModel.clone();
+        const tunLen = new THREE.Box3().setFromObject(tunnelModel).getSize(new THREE.Vector3()).z;
+        clone.position.z = tunnelModel.position.z - tunLen * i;
+        scene.add(clone);
+      }
+
       scene.add(tunnelModel);
       modelsLoaded.tunnel = true;
       checkAllLoaded();
     },
     undefined,
-    (err) => {
-      console.warn('Tunnel GLB load error:', err);
-      createFallbackTunnel();
-      modelsLoaded.tunnel = true;
-      checkAllLoaded();
-    }
+    (err) => { console.warn('Tunnel load error:', err); createFallbackTunnel(); modelsLoaded.tunnel = true; checkAllLoaded(); }
   );
 };
 
@@ -900,28 +933,29 @@ function createFallbackTunnel() {
 }
 
 // ─── CAMERA PATH ───────────────────────────────────────────────────────────
-// Keyframes: [x, y, z, lookAtX, lookAtY, lookAtZ, fov]
+// Car is ~4 units long, sits at Z=0. Tunnel runs from Z=+10 to Z=-320
+// Camera starts BEHIND car (positive Z = behind since car faces -Z)
 const camPath = [
-  // Intro: rear shot, behind car
-  { t: 0,    pos: [0, 1.5, 9],     look: [0, 0.8, -5],   fov: 55 },
-  // Pull back wider
-  { t: 0.08, pos: [0, 2.2, 14],    look: [0, 0.5, -10],  fov: 50 },
-  // Low side beauty shot
-  { t: 0.18, pos: [4, 0.4, -3],    look: [0, 0.8, -8],   fov: 60 },
-  // Dramatic low front 3/4
-  { t: 0.28, pos: [-3, 0.5, -12],  look: [0, 0.7, -20],  fov: 65 },
-  // High overhead
-  { t: 0.38, pos: [0, 8, -5],      look: [0, 0, -15],    fov: 45 },
-  // Low rear again, tunnel mouth
-  { t: 0.48, pos: [2, 0.8, 6],     look: [0, 1, -5],     fov: 55 },
-  // Inside tunnel, low
-  { t: 0.60, pos: [0, 1.2, -10],   look: [0, 1, -30],    fov: 70 },
-  // Tunnel fly-through wide
-  { t: 0.72, pos: [0, 2.5, -25],   look: [0, 1.5, -50],  fov: 75 },
-  // Exit rear shot, looping back
-  { t: 0.85, pos: [0, 1.8, -40],   look: [0, 1, -55],    fov: 60 },
-  // Back to start
-  { t: 1.0,  pos: [0, 1.5, 9],     look: [0, 0.8, -5],   fov: 55 },
+  // 0: Rear tracking — tight behind, low
+  { t: 0,    pos: [0,    1.2,  8],    look: [0, 0.8,  0],    fov: 55 },
+  // 1: Pull back wide
+  { t: 0.07, pos: [0,    2.5,  14],   look: [0, 0.8, -2],    fov: 50 },
+  // 2: Low side beauty — right side
+  { t: 0.17, pos: [5,    0.5,  1],    look: [0, 1.0, -3],    fov: 62 },
+  // 3: Front 3/4 low — dramatic
+  { t: 0.27, pos: [-3.5, 0.6, -6],   look: [0, 0.8, -1],    fov: 68 },
+  // 4: High overhead
+  { t: 0.37, pos: [0,    9,    -2],   look: [0, 0,   -5],    fov: 44 },
+  // 5: Tight rear again — inside tunnel entrance
+  { t: 0.47, pos: [1.5,  1.0,  7],   look: [0, 1.0, -2],    fov: 58 },
+  // 6: Inside tunnel — low chase
+  { t: 0.58, pos: [0,    1.4,  7],   look: [0, 1.2, -20],   fov: 72 },
+  // 7: Tunnel mid — sweeping wide
+  { t: 0.70, pos: [3,    3,    5],   look: [0, 1.5, -15],   fov: 75 },
+  // 8: Deep tunnel — rear far
+  { t: 0.83, pos: [0,    1.8,  10],  look: [0, 1.2, -5],    fov: 60 },
+  // 9: Loop back to start
+  { t: 1.0,  pos: [0,    1.2,  8],   look: [0, 0.8,  0],    fov: 55 },
 ];
 
 function lerpCam(t) {
@@ -1017,33 +1051,42 @@ function animate() {
 
   t += speed;
 
-  // Camera
+  // Car moves forward (negative Z = into tunnel). Loop every 80 units.
+  const carZ = -((t * 60) % 80);
+  if (carModel) {
+    carModel.position.z = carZ;
+    carModel.rotation.z = Math.sin(t * 4) * 0.012; // subtle body roll
+  }
+
+  // Camera: use the path offsets relative to the car's current position
   const camData = lerpCam(t);
-  camera.position.set(...camData.pos);
-  camera.lookAt(camData.look[0], camData.look[1], camData.look[2]);
+  // camData.pos is an offset from world origin; shift with car
+  camera.position.set(
+    camData.pos[0],
+    camData.pos[1],
+    camData.pos[2] + carZ  // follow car through tunnel
+  );
+  camera.lookAt(
+    camData.look[0],
+    camData.look[1],
+    camData.look[2] + carZ  // look at car
+  );
   camera.fov = camData.fov;
   camera.updateProjectionMatrix();
 
-  // Move car along tunnel (looped)
-  if (carModel) {
-    const loopZ = -((t * 80) % 80);
-    carModel.position.z = loopZ;
-    // Subtle body roll
-    carModel.rotation.z = Math.sin(t * 3) * 0.015;
-  }
-
-  // Animate tunnel lights
+  // Animate tunnel lights — keep them around the car
   const elapsed = clock.elapsedTime;
   tunnelLights.forEach((tl, i) => {
     tl.light.intensity = tl.baseIntensity * (0.6 + 0.4 * Math.sin(elapsed * 2.5 + i * 0.8));
-    // Colour pulse
+    // Orbit around car Z position, spread ahead and behind
+    tl.light.position.z = carZ + tl.baseZ % 30;
     const h = (elapsed * 0.05 + i * 0.05) % 1;
     tl.light.color.setHSL(0.05 + Math.sin(h * 6) * 0.02, 1, 0.5);
   });
 
-  // Ground light pulse
+  // Ground light pulse — tracks car
   groundLight.intensity = 1.5 + Math.sin(elapsed * 4) * 0.5;
-  groundLight.position.z = carModel ? carModel.position.z : 0;
+  groundLight.position.z = carZ;
 
   // Speed lines for fast sections
   const phase = t % 1;
