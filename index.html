@@ -1,39 +1,402 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>McLaren F1 GT — 1997</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>McLaren F1 GT — Cinematic V10</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+  :root{--orange:#ff5b14;--gold:#d39a3f;--white:#efe9df;--bg:#010101;--dim:rgba(239,233,223,.42)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--white);font-family:'Rajdhani',sans-serif;cursor:none}
+  #three-canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:7;background:
+    radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,.65) 72%, rgba(0,0,0,.98) 100%),
+    linear-gradient(90deg, rgba(255,91,20,.04), transparent 30%, transparent 70%, rgba(40,74,182,.05));}
+  .grain{position:fixed;inset:0;pointer-events:none;z-index:8;opacity:.06;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.78" numOctaves="2" stitchTiles="stitch"/></filter><rect width="180" height="180" filter="url(%23n)" opacity="0.34"/></svg>');mix-blend-mode:soft-light}
+  .speed-overlay{position:fixed;inset:0;pointer-events:none;z-index:9;opacity:.10;background:
+    repeating-linear-gradient(90deg, transparent 0 6%, rgba(255,255,255,.05) 6.1% 6.18%, transparent 6.22% 11%),
+    linear-gradient(180deg, transparent 0 52%, rgba(255,255,255,.022) 52% 53%, transparent 53% 100%);
+    background-size:200% 100%,100% 220%;mix-blend-mode:screen;animation:streak .4s linear infinite}
+  @keyframes streak{from{background-position:0 0,0 0}to{background-position:170% 0,0 160%}}
+  .bars-top,.bars-bottom{position:fixed;left:0;right:0;height:64px;background:#000000;z-index:12;transition:height 1.08s cubic-bezier(.7,0,.25,1)}
+  .bars-top{top:0}.bars-bottom{bottom:0}.bars-top.open,.bars-bottom.open{height:0}
+  #loader{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030303;transition:opacity .75s ease}
+  #loader.hidden{opacity:0;pointer-events:none}
+  .loader-logo{font-family:'Bebas Neue',cursive;font-size:clamp(56px,9vw,110px);letter-spacing:.18em}.loader-logo span{color:var(--orange)}
+  .loader-sub{margin-top:8px;font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:.45em;color:var(--dim)}
+  .loader-bar-wrap{margin-top:34px;width:min(380px,70vw);height:2px;background:rgba(255,255,255,.1);overflow:hidden}.loader-bar{height:100%;width:0;background:linear-gradient(90deg,var(--gold),var(--orange));box-shadow:0 0 16px rgba(255,91,20,.85);transition:width 0.2s ease;}
+  .loader-pct{margin-top:14px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.35em}
+  #hud{position:fixed;inset:0;z-index:15;pointer-events:none;opacity:0;transition:opacity 1s ease}#hud.visible{opacity:1}
+  .corner{position:absolute;width:24px;height:24px}.corner.tl{top:14px;left:18px;border-left:1px solid rgba(255,91,20,.5);border-top:1px solid rgba(255,91,20,.5)}.corner.tr{top:14px;right:18px;border-right:1px solid rgba(255,91,20,.5);border-top:1px solid rgba(255,91,20,.5)}.corner.bl{bottom:14px;left:18px;border-left:1px solid rgba(255,91,20,.5);border-bottom:1px solid rgba(255,91,20,.5)}.corner.br{bottom:14px;right:18px;border-right:1px solid rgba(255,91,20,.5);border-bottom:1px solid rgba(255,91,20,.5)}
+  .hud-tl{position:absolute;top:34px;left:36px}.hud-brand{font-family:'Bebas Neue',cursive;font-size:clamp(48px,6vw,78px);letter-spacing:.15em;line-height:.9}.hud-brand span{color:var(--orange)}.hud-model{margin-top:8px;font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:.5em;color:var(--gold)}
+  .hud-tr{position:absolute;top:34px;right:36px;text-align:right;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:.33em;color:var(--dim);line-height:1.9}.hud-tr .mph{margin-top:5px;color:var(--orange)}
+  .hud-br{position:absolute;right:42px;bottom:30px;display:flex;gap:34px}.spec{text-align:right}.spec .num{font-family:'Bebas Neue',cursive;font-size:42px;line-height:1;letter-spacing:.08em}.spec .num span{font-size:18px;color:var(--orange)}.spec .label{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:.34em;color:var(--dim);margin-top:4px}
+  .phase{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:.45em;color:rgba(255,255,255,.6); text-shadow: 0 0 10px rgba(255,255,255,0.4);}
+  #hero-name{position:fixed;left:50%;top:49%;transform:translate(-50%,-50%) scale(.92);z-index:11;pointer-events:none;opacity:0;font-family:'Bebas Neue',cursive;letter-spacing:.22em;text-align:center;text-transform:uppercase;line-height:.85;color:rgba(245,238,228,.12);text-shadow:0 0 36px rgba(255,91,20,.14),0 0 90px rgba(255,91,20,.08);transition:opacity .4s ease,transform .6s ease;white-space:nowrap}
+  #hero-name .main{display:block;font-size:clamp(60px,10vw,180px)}#hero-name .sub{display:block;margin-top:8px;font-size:clamp(16px,2vw,28px);letter-spacing:.55em;color:rgba(255,180,90,.22)}
+  #cursor,#cursor-ring{position:fixed;left:0;top:0;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);z-index:50}#cursor{width:10px;height:10px;background:var(--orange);mix-blend-mode:screen}#cursor-ring{width:36px;height:36px;border:1px solid rgba(255,91,20,.45)}
+</style>
+</head>
+<body>
+<canvas id="three-canvas"></canvas>
+<div id="loader"><div class="loader-logo">MC<span>LAREN</span></div><div class="loader-sub">F1 GT · 1997 · INITIALIZING ASSETS</div><div class="loader-bar-wrap"><div class="loader-bar" id="loader-bar"></div></div><div class="loader-pct" id="loader-pct">0%</div></div>
+<div class="bars-top" id="bar-top"></div><div class="bars-bottom" id="bar-bottom"></div>
+<div class="vignette"></div><div class="grain"></div><div class="speed-overlay"></div>
+<div id="hero-name"><span class="main">MCLAREN</span><span class="sub">F1 GT</span></div>
+<div id="hud">
+  <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+  <div class="hud-tl"><div class="hud-brand">Mc<span>Laren</span></div><div class="hud-model">F1 GT · 1997 · CHASSIS #025</div></div>
+  <div class="hud-tr"><div>BMW S70/2 ENGINE</div><div>6.1L V12 NATURALLY ASPIRATED</div><div class="mph" id="speed-counter">000 MPH</div></div>
+  <div class="hud-br"><div class="spec"><div class="num">627<span>BHP</span></div><div class="label">POWER</div></div><div class="spec"><div class="num">240<span>MPH</span></div><div class="label">TOP SPEED</div></div><div class="spec"><div class="num">3.2<span>S</span></div><div class="label">0–60 MPH</div></div></div>
+  <div class="phase" id="phase-label">INITIATING</div>
+</div>
+<div id="cursor"></div><div id="cursor-ring"></div>
 
-  :root {
-    --orange: #FF5500;
-    --gold: #C9933A;
-    --white: #F0EDE8;
-    --dark: #050507;
-    --mid: #0A0A0F;
-    --text-dim: rgba(240,237,232,0.45);
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+<script>
+(() => {
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:false}); // Disabled antialias for post-processing compat
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1; // Slightly boosted for cinematic contrast
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020304); 
+scene.fog = new THREE.FogExp2(0x020304, 0.015); // Adjusted fog for larger tunnel scale
+
+const camera = new THREE.PerspectiveCamera(43, innerWidth/innerHeight, 0.1, 800);
+const clock = new THREE.Clock();
+
+// --- POST PROCESSING ---
+const composer = new THREE.EffectComposer(renderer);
+const renderPass = new THREE.RenderPass(scene, camera);
+composer.addPass(renderPass);
+const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.2, 0.6, 0.8);
+composer.addPass(bloomPass);
+
+const LOOP = 20.0; // 4 sequences, 5 seconds each
+let started=false, elapsed=0;
+let carRoot=null, realWheels=[], headSpots=[], beamCones=[];
+let tunnelSegments=[], tunnelLength = 0;
+let dynamicLights = [];
+let displaySpeed=0;
+
+const heroName=document.getElementById('hero-name');
+const hud=document.getElementById('hud');
+const phaseLabel=document.getElementById('phase-label');
+const speedCounter=document.getElementById('speed-counter');
+const bar=document.getElementById('loader-bar');
+const pct=document.getElementById('loader-pct');
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function smooth(v){v=clamp(v,0,1);return v*v*(3-2*v);}
+function mix(a,b,t){return a+(b-a)*t;}
+function mixVec(a,b,t){return new THREE.Vector3(mix(a.x,b.x,t),mix(a.y,b.y,t),mix(a.z,b.z,t));}
+
+// ----- Asset Loading Management -----
+let assetsLoaded = 0;
+const totalAssets = 2; // Car + Tunnel
+
+const manager=new THREE.LoadingManager();
+manager.onProgress=(url,l,t)=>{ 
+    // Overall progress combination logic handled per loader roughly
+};
+
+function checkReady() {
+    assetsLoaded++;
+    const p = Math.round((assetsLoaded / totalAssets) * 100);
+    bar.style.width=p+'%'; pct.textContent=p+'%';
+    
+    if (assetsLoaded === totalAssets) {
+        setTimeout(()=>{ 
+            document.getElementById('loader').classList.add('hidden'); 
+            hud.classList.add('visible'); 
+            document.getElementById('bar-top').classList.add('open'); 
+            document.getElementById('bar-bottom').classList.add('open'); 
+            started=true; 
+            clock.start(); 
+        }, 500);
+    }
+}
+
+const gltfLoader=new THREE.GLTFLoader(manager);
+
+// ----- Lighting setup -----
+scene.add(new THREE.AmbientLight(0x06080d, 0.3)); 
+const roofHero=new THREE.SpotLight(0xfff2d4, 0, 34, Math.PI/6, 0.38, 1.2); 
+roofHero.position.set(0,5.8,-1.8); 
+roofHero.target.position.set(0,0.85,0); 
+roofHero.castShadow=true; 
+scene.add(roofHero,roofHero.target);
+
+// Dynamic cinematic passing street lights
+for(let i=0; i<8; i++){
+    const dl = new THREE.PointLight(0xff7700, 1.8, 40, 2);
+    dl.position.set((i%2===0 ? 6 : -6), 4.5, -i * 50);
+    scene.add(dl);
+    dynamicLights.push(dl);
+}
+
+// ----- Contact shadow -----
+function makeContactTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=512; const x=c.getContext('2d');
+  const g=x.createRadialGradient(256,256,28,256,256,235); 
+  g.addColorStop(0,'rgba(0,0,0,.85)'); g.addColorStop(.45,'rgba(0,0,0,.55)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=g; x.fillRect(0,0,512,512); return new THREE.CanvasTexture(c);
+}
+const contact=new THREE.Mesh(new THREE.PlaneGeometry(4.8,7.8), new THREE.MeshBasicMaterial({map:makeContactTexture(), transparent:true, opacity:1.0, depthWrite:false}));
+contact.rotation.x=-Math.PI/2; contact.position.y=.02; scene.add(contact);
+
+function addHeadlights(root, halfW, frontZ){
+  const glowMat=new THREE.MeshBasicMaterial({color:0xffffff});
+  const leftGlow=new THREE.Mesh(new THREE.SphereGeometry(0.07,12,12),glowMat); const rightGlow=leftGlow.clone();
+  leftGlow.position.set(-halfW*0.42,0.58,frontZ); rightGlow.position.set(halfW*0.42,0.58,frontZ); root.add(leftGlow,rightGlow);
+  
+  const mkSpot=(xoff)=>{ 
+    const s=new THREE.SpotLight(0xfff4d1, 10.0, 80, Math.PI/6, 0.4, 1.5); 
+    s.position.set(xoff,0.58,frontZ); 
+    s.target.position.set(xoff*0.42, 0.1, frontZ-30); 
+    root.add(s,s.target); return s; 
+  };
+  const mkBeam=(xoff)=>{ 
+    const geom=new THREE.CylinderGeometry(0.08, 2.0, 15.0, 18, 1, true); 
+    const mat=new THREE.MeshBasicMaterial({color:0xfff2cb, transparent:true, opacity:0.1, side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending}); 
+    const cone=new THREE.Mesh(geom,mat); 
+    cone.rotation.x=Math.PI/2; 
+    cone.position.set(xoff, 0.51, frontZ-7.5); 
+    root.add(cone); return cone; 
+  };
+  
+  headSpots=[mkSpot(-halfW*0.42),mkSpot(halfW*0.42)]; 
+  beamCones=[mkBeam(-halfW*0.42),mkBeam(halfW*0.42)];
+}
+
+// ----- Loaders -----
+gltfLoader.load('1997_mclaren_f1_gt.glb', gltf => {
+  carRoot=gltf.scene;
+  const box=new THREE.Box3().setFromObject(carRoot); const size=box.getSize(new THREE.Vector3()); const center=box.getCenter(new THREE.Vector3());
+  const scale=4.62/size.z; carRoot.scale.setScalar(scale); carRoot.position.sub(center.multiplyScalar(scale)); carRoot.updateWorldMatrix(true,true);
+  const box2=new THREE.Box3().setFromObject(carRoot); carRoot.position.y += -box2.min.y + 0.03;
+  carRoot.rotation.y = Math.PI; // Face -Z
+  
+  carRoot.traverse(o=>{ 
+    if(o.isMesh){ 
+      o.castShadow=true; o.receiveShadow=true; 
+      if(o.material){ o.material.envMapIntensity=1.08; o.material.needsUpdate=true; } 
+      const n = o.name.toLowerCase();
+      const isWheelPart = ['wheel', 'tire', 'rim', 'brake', 'rotor', 'disk'].some(w => n.includes(w));
+      if(isWheelPart && !o.userData.isExtracted) {
+         o.geometry.computeBoundingBox();
+         const meshSize = o.geometry.boundingBox.getSize(new THREE.Vector3());
+         if (meshSize.x < 1.5 && meshSize.z < 1.5) {
+             o.userData.isExtracted = true;
+             const meshCenter = o.geometry.boundingBox.getCenter(new THREE.Vector3());
+             o.geometry = o.geometry.clone();
+             o.geometry.translate(-meshCenter.x, -meshCenter.y, -meshCenter.z);
+             o.position.add(meshCenter);
+             realWheels.push(o);
+         }
+      }
+    } 
+  });
+
+  const b=new THREE.Box3().setFromObject(carRoot); const s=b.getSize(new THREE.Vector3()); 
+  addHeadlights(carRoot, s.x/2, -s.z/2);
+  scene.add(carRoot);
+  checkReady();
+});
+
+gltfLoader.load('tunnel_road.glb', gltf => {
+    const tRef = gltf.scene;
+    // Rotate 90 deg so the road (X-axis dominant usually) runs along Z axis
+    tRef.rotation.y = Math.PI / 2;
+    tRef.updateMatrixWorld(true);
+    
+    // Calculate length of the tunnel
+    const box = new THREE.Box3().setFromObject(tRef);
+    const size = box.getSize(new THREE.Vector3());
+    tunnelLength = size.z; 
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Center origin X, and sit flat on Y
+    tRef.position.x -= center.x;
+    tRef.position.y -= box.min.y - 0.02; // Slightly below car
+
+    // Apply materials fix if needed
+    tRef.traverse(o => {
+        if(o.isMesh){
+            o.receiveShadow = true;
+            if(o.material) o.material.roughness = 0.8;
+        }
+    });
+
+    // Create clones for infinite loop
+    const clonesCount = 3; 
+    for(let i=0; i<clonesCount; i++){
+        const c = tRef.clone();
+        c.position.z = -i * tunnelLength;
+        scene.add(c);
+        tunnelSegments.push(c);
+    }
+    checkReady();
+});
+
+function setPose(pos, look, fov, roll = 0, shakeAmount = 0){ 
+  // Add cinematic high-frequency camera shake
+  const sx = (Math.random() - 0.5) * shakeAmount;
+  const sy = (Math.random() - 0.5) * shakeAmount;
+  
+  camera.position.copy(pos).add(new THREE.Vector3(sx, sy, 0)); 
+  camera.up.set(Math.sin(roll), Math.cos(roll), 0).normalize();
+  camera.lookAt(look); 
+  camera.fov=fov; 
+  camera.updateProjectionMatrix(); 
+}
+
+function animateEnvironment(dt){
+  const roadSpeed = 75.0; // Very fast to emphasize the tunnel
+  
+  // Move tunnel infinitely
+  if(tunnelLength > 0) {
+      tunnelSegments.forEach(t => {
+          t.position.z += dt * roadSpeed;
+          if (t.position.z > tunnelLength * 1.5) {
+              t.position.z -= tunnelLength * tunnelSegments.length;
+          }
+      });
   }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  // Dynamic flying lights
+  dynamicLights.forEach((dl, i) => {
+      dl.position.z += dt * roadSpeed * 1.2;
+      if(dl.position.z > 20) {
+          dl.position.z = -150 - (Math.random() * 80);
+          dl.intensity = 1.0 + Math.random() * 2.0;
+      }
+  });
+  
+  realWheels.forEach(w=>{ w.rotation.x -= dt*65; });
+  
+  displaySpeed += ((235 + Math.sin(elapsed*1.6)*6) - displaySpeed) * 0.08;
+  speedCounter.textContent=Math.round(displaySpeed).toString().padStart(3,'0')+' MPH';
+}
 
-  html { scroll-behavior: smooth; }
+function updateSequence(dt){
+  elapsed += dt;
+  const t = elapsed % LOOP;
 
-  body {
-    background: var(--dark);
-    color: var(--white);
-    font-family: 'Rajdhani', sans-serif;
-    overflow-x: hidden;
-    cursor: none;
+  let phaseName = '';
+  let headStrength = 1.0;
+  let roofMix = 0.0;
+  let heroText = 0.0;
+  let pos = new THREE.Vector3();
+  let look = new THREE.Vector3();
+  let fov = 40;
+  let roll = 0;
+  let shake = 0.015; // Base subtle shake
+
+  // SEQUENCE 1: Intro sequence (0-5s) - Tight, fast low angle
+  if(t < 5.0){
+    phaseName = 'SYSTEM INITIATION - EXHAUST CAM';
+    const u = smooth(t/5.0);
+    pos = mixVec(new THREE.Vector3(0.1, 0.25, 4.8), new THREE.Vector3(-1.8, 0.8, 3.8), u);
+    look = mixVec(new THREE.Vector3(0, 0.5, 0), new THREE.Vector3(0, 0.4, -1.0), u);
+    fov = mix(55, 42, u);
+    roll = mix(0.02, -0.06, u);
+    roofMix = 0.4;
+    shake = 0.035; // Rough start
+  } 
+  // SEQUENCE 2: Cinematic tracking (5-10s)
+  else if(t < 10.0){
+    phaseName = 'DRONE TOP-DOWN SWEEP';
+    const u = smooth((t-5.0)/5.0);
+    pos = mixVec(new THREE.Vector3(-3.5, 5.0, 1.0), new THREE.Vector3(4.0, 3.5, -4.0), u);
+    look = mixVec(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -2.5), u);
+    fov = mix(35, 52, u);
+    roll = mix(-0.08, 0.25, u);
+    roofMix = 1.0 - u;
+    shake = 0.01; // Smooth drone
+  } 
+  // SEQUENCE 3: Dutch angle profile (10-15s)
+  else if(t < 15.0){
+    phaseName = 'HIGH SPEED TRACKING';
+    const u = smooth((t-10.0)/5.0);
+    pos = mixVec(new THREE.Vector3(-4.8, 0.3, 2.5), new THREE.Vector3(-3.2, 0.8, -4.5), u);
+    look = mixVec(new THREE.Vector3(0, 0.5, 1.0), new THREE.Vector3(0, 0.5, -3.0), u);
+    fov = mix(48, 32, u);
+    roll = mix(0.15, -0.05, u);
+    roofMix = 0.5 * u;
+    shake = 0.02;
+  } 
+  // SEQUENCE 4: Aggressive Front View (15-20s)
+  else {
+    phaseName = 'VMAX - FRONT HERO';
+    const u = smooth((t-15.0)/5.0);
+    pos = mixVec(new THREE.Vector3(3.5, 0.12, -6.0), new THREE.Vector3(4.5, 1.5, -8.5), u);
+    look = mixVec(new THREE.Vector3(0, 0.4, -0.5), new THREE.Vector3(0, 0.8, -1.0), u);
+    fov = mix(30, 48, u);
+    roll = mix(0, -0.4, u); // Heavy cinematic angle!
+    roofMix = u;
+    shake = 0.05 + (u * 0.04); // Intense rattling shake!
+    
+    heroText = smooth((t-15.5)/1.0) * (1-smooth((t-19.5)/0.4));
   }
 
-  /* CUSTOM CURSOR */
-  #cursor {
-    position: fixed; top: 0; left: 0;
-    width: 12px; height: 12px;
-    background: var(--orange);
-    border-radius: 50%;
+  phaseLabel.textContent = phaseName;
+  setPose(pos, look, fov, roll, shake);
+
+  headSpots.forEach(h=>h.intensity = 12.0*headStrength + 1.0);
+  beamCones.forEach(b=>b.material.opacity = 0.15*headStrength + 0.02);
+  roofHero.intensity = 8.0*roofMix;
+
+  if(carRoot){
+    const yaw = Math.PI + (Math.sin(elapsed * 1.5) * 0.01);
+    carRoot.rotation.y = yaw;
+    contact.rotation.z = -(yaw - Math.PI)*0.18;
+    contact.position.set(0,0.022,0.05);
+  }
+
+  heroName.style.opacity=(0.9*heroText).toFixed(3);
+  heroName.style.transform=`translate(-50%,-50%) scale(${mix(0.92,1.0,heroText)})`;
+}
+
+function render(){
+  requestAnimationFrame(render);
+  if(!started) return;
+  const dt=Math.min(clock.getDelta(),0.05);
+  animateEnvironment(dt);
+  updateSequence(dt);
+  composer.render(); // Replaced renderer.render with composer.render for Bloom
+}
+render();
+
+addEventListener('resize',()=>{ 
+    renderer.setSize(innerWidth,innerHeight); 
+    composer.setSize(innerWidth, innerHeight);
+    camera.aspect=innerWidth/innerHeight; 
+    camera.updateProjectionMatrix(); 
+});
+const cur=document.getElementById('cursor'), ring=document.getElementById('cursor-ring'); let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
+document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;});
+(function cursorLoop(){rx+=(mx-rx)*0.15;ry+=(my-ry)*0.15;cur.style.left=mx+'px';cur.style.top=my+'px';ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(cursorLoop);})();
+})();
+</script>
+</body>
+</html>
     pointer-events: none;
     z-index: 9999;
     transform: translate(-50%,-50%);
